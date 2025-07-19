@@ -1,42 +1,28 @@
-# =======================================================
-# Fichier .dockerignore pour un projet Python/FastAPI
-# =======================================================
 
-# 1. Le plus important : Secrets et environnement local
-# Ne JAMAIS inclure les fichiers d'environnement dans l'image.
-# Ils seront fournis au moment de l'exécution (docker run).
 .env
 .env.*
-!/.env.example  # Permet d'inclure un fichier d'exemple si vous en avez un
+!/.env.example  
 
-# 2. Fichiers et répertoires de Git
-# Le dépôt Git complet peut être très lourd et est inutile dans l'image.
+
 .git
 .gitignore
 
-# 3. Artefacts Python et environnements virtuels
-# Le Dockerfile crée son propre venv. Celui de votre machine locale
-# ne doit pas être inclus, car il peut contenir des binaires spécifiques
-# à votre système d'exploitation (macOS, Windows, etc.).
+
 .venv/
 venv/
 env/
 *.pyc
 __pycache__/
 
-# 4. Fichiers de configuration des éditeurs et IDE
-# Spécifique à votre environnement de développement, inutile dans l'image.
+
 .vscode/
 .idea/
 
-# 5. Fichiers Docker
-# Le Dockerfile et le dockerignore sont utilisés par Docker,
-# mais n'ont pas besoin d'être copiés DANS l'image.
+
 Dockerfile
 .dockerignore
 
-# 6. Artefacts de test et de build
-# Caches, rapports de couverture, etc.
+
 .pytest_cache/
 .coverage
 htmlcov/
