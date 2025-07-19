@@ -1,0 +1,25 @@
+# Fichier .gitignore
+
+# Secrets et variables d'environnement locales
+.env
+.env.*
+
+# Caches et environnements virtuels Python
+__pycache__/
+*.pyc
+.venv
+venv
+env/
+
+# Fichiers de configuration des éditeurs
+.vscode/
+.idea/
+
+# Fichiers de build et de test
+build/
+dist/
+.pytest_cache/
+
+# Fichiers système
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+# --- Core Web Framework & Server ---
+fastapi==0.95.0
+uvicorn==0.21.1
+gunicorn # Gardé sans version pour la flexibilité, mais il fonctionnera
+
+# --- AI & Image Processing ---
+google-generativeai==0.8.3
+pillow==10.2.0
+
+# --- Configuration & Utilities ---
+python-dotenv==1.0.1
+python-multipart==0.0.20
