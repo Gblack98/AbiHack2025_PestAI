@@ -1,12 +1,19 @@
-# --- Core Web Framework & Server ---
+# --- Framework & Serveur Web ---
+# Pour créer l'API et la servir.
 fastapi==0.95.0
 uvicorn==0.21.1
-gunicorn # Gardé sans version pour la flexibilité, mais il fonctionnera
-
-# --- AI & Image Processing ---
+gunicorn==23.0.0
+python-multipart==0.0.9 
+# --- Client pour l'API Google Gemini ---
+# Pour communiquer avec le modèle d'IA.
 google-generativeai==0.8.3
-pillow==10.2.0
 
-# --- Configuration & Utilities ---
+# --- Configuration ---
+# Pour charger les variables d'environnement (GEMINI_API_KEY) depuis un fichier .env.
 python-dotenv==1.0.1
-python-multipart==0.0.20
+
+# --- Bibliothèques pour l'Optimisation des Quotas ---
+# Pour le caching, le rate limiting et la gestion des réessais.
+fastapi-cache2==0.2.2
+slowapi==0.1.9
+tenacity==8.5.0
