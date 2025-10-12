@@ -1,34 +1,56 @@
-FROM python:3.12-slim
+# =================================================================================
+# ÉTAPE 1: "BUILDER" - Installation des dépendances dans un environnement isolé
+# =================================================================================
+# On utilise une image de base slim et on la nomme "builder"
+FROM python:3.12-slim as builder
 
-# --- Étape 2: Configuration de l'Environnement ---
-# On définit le répertoire de travail à l'intérieur du conteneur.
-# Toutes les commandes suivantes s'exécuteront depuis ce dossier.
-WORKDIR /app
-
-# On définit des variables d'environnement pour optimiser le comportement de Python.
-# 1. Empêche Python de bufferiser les sorties (stdout/stderr), ce qui est mieux pour le logging.
-# 2. Empêche Python de créer des fichiers .pyc, inutiles dans un conteneur.
-ENV PYTHONUNBUFFERED=1
+# Variables d'environnement pour optimiser Python et pip
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# --- Étape 3: Installation des Dépendances ---
-# On copie UNIQUEMENT le fichier requirements.txt d'abord.
-# Docker met en cache cette couche. Si le fichier ne change pas, il n'exécutera pas
-# la longue étape d'installation à chaque fois, ce qui accélère les builds.
+# Création et activation d'un environnement virtuel dans /opt/venv
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copie du fichier de dépendances
+WORKDIR /app
 COPY requirements.txt .
 
-# On exécute la commande pip pour installer toutes les dépendances listées.
-# --no-cache-dir réduit la taille finale de l'image.
-RUN pip install --default-timeout=500 --no-cache-dir -r requirements.txt
-# --- Étape 4: Copie du Code de l'Application ---
-# Maintenant que les dépendances sont installées, on copie le reste du code
-# (votre fichier main.py et le .env pour la construction, si nécessaire).
+# Mise à jour de pip et installation des dépendances
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir --default-timeout=100 -r requirements.txt
+
+
+# =================================================================================
+# ÉTAPE 2: "FINAL" - Création de l'image de production légère et sécurisée
+# =================================================================================
+# On repart d'une image de base neuve pour la propreté et la légèreté
+FROM python:3.12-slim
+
+# Création d'un utilisateur non-root pour la sécurité (C'EST LE BON ENDROIT)
+RUN addgroup --system app && adduser --system --ingroup app app
+
+# On copie uniquement l'environnement virtuel avec les dépendances déjà installées
+# depuis l'étape "builder".
+COPY --from=builder /opt/venv /opt/venv
+
+# On définit le répertoire de travail
+WORKDIR /app
+
+# On copie le code de notre application
 COPY . .
 
-# --- Étape 5: Exposition du Port ---
-# On informe Docker que notre application écoutera sur le port 8000
-# à l'intérieur du conteneur. C'est ce port que Gunicorn va utiliser.
+# L'utilisateur 'app' devient propriétaire des fichiers
+RUN chown -R app:app /app
+
+# On bascule vers l'utilisateur non-root
+USER app
+
+# On expose le port 8000
 EXPOSE 8000
 
-# main:app: Indique à Gunicorn de lancer l'objet "app" qui se trouve dans le fichier "main.py".
+# On s'assure que le shell utilisera les exécutables du venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Commande pour lancer l'application avec Gunicorn
 CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "main:app"]
