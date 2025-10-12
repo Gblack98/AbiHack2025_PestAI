@@ -17,3 +17,8 @@ python-dotenv==1.0.1
 fastapi-cache2==0.2.2
 slowapi==0.1.9
 tenacity==8.5.0
+
+# --- Bibliothèques pour la Manipulation d'Images et le Stockage ---
+# Pour découper les zones de détection et les uploader sur un CDN.
+cloudinary==1.40.0
+Pillow==10.5.0
