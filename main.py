@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # --- Dépendances pour l'optimisation des quotas ---
-from fastapi_cache import FastAPCache
+from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
 from slowapi import Limiter, _rate_limit_exceeded_handler
