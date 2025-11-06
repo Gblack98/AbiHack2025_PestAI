@@ -326,7 +326,7 @@ async def analyze_unified_endpoint(
     ),
     file: UploadFile = File(
         ...,
-        description="Fichier image (JPEG, PNG). Doit être une photo de proximité ou une image satellite."
+        description="Fichier image (JPEG,JPG, PNG). Doit être une photo de proximité ou une image satellite."
     )
 ):
     """
