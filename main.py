@@ -339,8 +339,8 @@ async def analyze_unified_endpoint(
     5.  **Découper les 'détections'** (lésions ou zones de stress) et les uploader sur Cloudinary.
     6.  **Retourner le JSON** structuré `AIAnalysisResponse`.
     """
-    if file.content_type not in ["image/jpeg", "image/png"]:
-        raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG ou PNG.")
+    if file.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG, JPG ou PNG.")
 
     # --- 1. Sélection du Prompt ---
     if analysis_type == AnalysisType.PLANT_PEST:
