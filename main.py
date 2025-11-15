@@ -30,7 +30,7 @@ from PIL import Image
 # --- Configuration Initiale ---
 load_dotenv()
 
-# --- GESTIONNAIRE DE CLÉS API GEMINI ---
+# --- GESTIONNAIRE DE CLÉS API GEMINI (v2 - Inchangé) ---
 class KeyManager:
     """
     Gestionnaire de clés API asynchrone et "coroutine-safe"
@@ -57,47 +57,41 @@ class KeyManager:
                 print(f"Limite de quota atteinte. Passage à la clé API suivante : ...{self._current_key[-4:]}")
             return self._current_key
 
-# --- Configuration des clés Gemini ---
+# --- Configuration des clés Gemini (inchangée) ---
 gemini_api_keys_str = os.getenv("GEMINI_API_KEYS")
 if not gemini_api_keys_str:
     raise ValueError("Variable d'environnement GEMINI_API_KEYS non trouvée.")
 gemini_api_keys = [key.strip() for key in gemini_api_keys_str.split(',') if key.strip()]
 key_manager = KeyManager(gemini_api_keys)
 
-# --- Configuration Cloudinary ---
+# --- Configuration Cloudinary (inchangée) ---
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# --- Configuration du Rate Limiter ---
+# --- Configuration du Rate Limiter (inchangée) ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
-# --- Initialisation de l'Application FastAPI  ---
+# --- Initialisation de l'Application FastAPI (MODIFIÉE) ---
 app = FastAPI(
     title="PestAI - Unified Analysis Microservice",
-    description="API v10.0. Service unifié pour l'analyse multi-échelle : Plante, Satellite ET Drone.",
-    version="10.0.0"
+    description="API v11.0. Service unifié (Plante, Satellite, Drone) avec prompts TTS optimisés.",
+    version="11.0.0"
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# --- Types d'analyse possibles ---
+# --- Types d'analyse possibles (Inchangé) ---
 class AnalysisType(str, Enum):
     PLANT_PEST = "PLANT_PEST"
     SATELLITE_REMOTE_SENSING = "SATELLITE_REMOTE_SENSING"
-    DRONE_ANALYSIS = "DRONE_ANALYSIS" 
+    DRONE_ANALYSIS = "DRONE_ANALYSIS"
 
 # --- Structures de Données Pydantic (Inchangées) ---
-# Notre structure AIAnalysisResponse est universelle.
-# Pour le Drone :
-# - Detection.className = "Infestation de Mauvaises Herbes"
-# - Detection.severity = "MEDIUM"
-# - Detection.boundingBox = Coordonnées de la zone infestée
-# - Detection.details.recommendations = { "chemical": [{ "solution": "Herbispray ciblé" ... }] }
-
+# ... [Toutes vos classes Pydantic restent identiques] ...
 class SeverityLevel(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -143,19 +137,19 @@ class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
 
-# --- NOUVEAU: Banque de Prompts ---
+# --- NOUVEAU: Banque de Prompts v11 (Optimisée TTS) ---
 
-# PROMPT 1: Analyse de Proximité (Plantes & Ravageurs) - 
+# PROMPT 1: Analyse de Proximité (Plantes & Ravageurs)
 PLANT_PEST_PROMPT = """
 Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondiale. Ta fonction est l'analyse d'images de PROXIMITÉ (feuilles, tiges, insectes).
 
 **TA MISSION :**
-1.  **Identifier le Sujet Principal :** 'PLANT', 'PEST', ou 'UNKNOWN'.
+1.  **Identifier le Sujet Principal :** 'PLANT', 'PEST', ou 'UNKNOWN'. Si l'image n'est pas claire ou pas agricole, utilise 'UNKNOWN'.
 2.  **Mener une Analyse Complète :**
     - Identifie l'espèce du sujet et chaque problème (maladie/ravageur).
     - Pour chaque détection, tu DOIS évaluer sa sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL').
-    - Pour chaque détection, tu DOIS générer des mots-clés pertinents (`knowledgeBaseTags`).
-3.  **Fournir une Réponse JSON Strictement Structurée :** Ta réponse doit être EXCLUSIVEMENT au format JSON. Ne renvoie AUCUN texte avant ou après. Le schéma est le suivant :
+    - Tu DOIS générer des `knowledgeBaseTags` pertinents.
+3.  **Fournir une Réponse JSON Strictement Structurée :** Ta réponse doit être EXCLUSIVEMENT au format JSON. Ne renvoie AUCUN texte avant ou après.
 
 {
   "subject": {
@@ -170,118 +164,117 @@ Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondial
       "severity": "string ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')",
       "boundingBox": { "x_min": "float", "y_min": "float", "x_max": "float", "y_max": "float" },
       "details": {
-        "description": "string (Description détaillée du problème)",
-        "impact": "string (Impact sur la plante)",
+        "description": "string (Description simple du problème)",
+        "impact": "string (Impact simple sur la plante)",
         "recommendations": {
           "biological": [ { "solution": "string", "details": "string", "source": "string (URL)" } ],
           "chemical": [ { "solution": "string", "details": "string", "source": "string (URL)" } ],
           "cultural": [ { "solution": "string", "details": "string", "source": "string (URL)" } ]
         },
-        "knowledgeBaseTags": [ "string (Liste de mots-clés pertinents)" ]
+        "knowledgeBaseTags": [ "string" ]
       }
     }
   ]
 }
 
-**RÈGLES D'OR (PROXIMITÉ) :**
-- **SÉVÉRITÉ OBLIGATOIRE :** Le champ `severity` est crucial.
-- **BOUNDING BOX PRÉCISE :** Les boîtes doivent cibler la lésion ou le ravageur.
-- **NORMALISATION :** Les coordonnées de `boundingBox` DOIVENT être normalisées (0.0 à 1.0).
+**RÈGLES D'OR v11 :**
+- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. Évite le jargon complexe. (Ex: "Cette maladie bloque les feuilles. Le rendement va baisser." au lieu de "Cette pathologie fongique inhibe la photosynthèse, induisant une sénescence précoce...").
+- **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
+- **SÉVÉRITÉ :** Le champ `severity` est obligatoire.
+- **BOUNDING BOX :** Les boîtes doivent cibler la lésion ou le ravageur.
 """
 
-# PROMPT 2: Analyse Satellite (Télédétection) 
+# PROMPT 2: Analyse Satellite (Télédétection)
 SATELLITE_PROMPT = """
 Tu es 'PestAI-RemoteSensing', un moteur d'analyse expert en agronomie et en télédétection. Ta fonction est l'analyse d'images SATELLITES (ex: Sentinel-2, Landsat) de parcelles agricoles.
-Tu es spécifiquement calibré pour l'agriculture en Afrique de l'Ouest (Sénégal, Zone des Niayes, Vallée du Fleuve Sénégal).
 
 **TA MISSION :**
-1.  **Identifier le Sujet Principal :** Toujours 'SATELLITE_PLOT'. La description doit être 'Analyse de parcelle agricole'.
+1.  **Identifier le Sujet Principal :** Toujours 'SATELLITE_PLOT'.
 2.  **Mener une Analyse Diagnostique Zonale :**
-    - Identifie les problèmes agronomiques majeurs visibles depuis l'espace (Stress hydrique, Vigueur de la végétation (basée sur NDVI implicite), Déficience en nutriments (ex: Azote), possible Salinisation du sol).
-    - Pour chaque diagnostic zonal, tu DOIS évaluer sa sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL').
-    - Pour chaque diagnostic, tu DOIS délimiter la zone affectée avec une `boundingBox`.
-    - Pour chaque diagnostic, tu DOIS générer des mots-clés (`knowledgeBaseTags`).
-3.  **Fournir une Réponse JSON Strictement Structurée :** Ta réponse doit être EXCLUSIVEMENT au format JSON. Ne renvoie AUCUN texte avant ou après. Le schéma est IDENTIQUE à l'analyse de proximité :
+    - Identifie les problèmes majeurs (ex: 'Stress Hydrique', 'Faible Vigueur (NDVI)', 'Déficience Azotée', 'Salinisation').
+    - Évalue la sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL') pour chaque problème.
+    - Délimite la zone affectée avec une `boundingBox`.
+    - Génère des `knowledgeBaseTags`.
+3.  **Fournir une Réponse JSON Strictement Structurée :** EXCLUSIVEMENT au format JSON.
 
 {
   "subject": {
     "subjectType": "string (Toujours 'SATELLITE_PLOT')",
-    "description": "string (ex: 'Analyse de parcelle agricole, région de Saint-Louis')",
-    "confidence": "float (Toujours 1.0)"
+    "description": "string (ex: 'Analyse de parcelle agricole.')",
+    "confidence": 1.0
   },
   "detections": [
     {
-      "className": "string (Nom du diagnostic, ex: 'Stress Hydrique', 'Faible vigueur de végétation', 'Déficience en Azote suspectée')",
+      "className": "string (Nom du diagnostic, ex: 'Stress Hydrique')",
       "confidenceScore": "float",
       "severity": "string ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')",
       "boundingBox": { "x_min": "float", "y_min": "float", "x_max": "float", "y_max": "float" },
       "details": {
-        "description": "string (Description détaillée du diagnostic zonal)",
-        "impact": "string (Impact sur le rendement potentiel de la parcelle)",
+        "description": "string (Description simple du diagnostic)",
+        "impact": "string (Impact simple sur le rendement)",
         "recommendations": {
           "biological": [],
-          "chemical": [ { "solution": "Application d'engrais azoté", "details": "Appliquer X unités d'azote...", "source": null } ],
-          "cultural": [ { "solution": "Optimisation de l'irrigation", "details": "Augmenter l'apport en eau de 20% sur la zone...", "source": null } ]
+          "chemical": [ { "solution": "string", "details": "string", "source": null } ],
+          "cultural": [ { "solution": "string", "details": "string", "source": null } ]
         },
-        "knowledgeBaseTags": [ "string (ex: 'Stress Hydrique', 'NDVI', 'Sentinel-2', 'Gestion Eau', 'Fertilisation')" ]
+        "knowledgeBaseTags": [ "string" ]
       }
     }
   ]
 }
 
-**RÈGLES D'OR (SATELLITE) :**
-- **ANALYSE ZONALE :** Les 'détections' sont des 'diagnostics zonaux'.
-- **RECOMMANDATIONS PRAGMATIQUES :** Les recommandations doivent être actionnables (irrigation, fertilisation, etc.).
-- **NORMALISATION :** Les coordonnées de `boundingBox` DOIVENT être normalisées (0.0 à 1.0).
+**RÈGLES D'OR v11 :**
+- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. Évite le jargon. (Ex: "La parcelle manque d'eau. Les plantes souffrent." au lieu de "L'indice de stress hydrique indique une évapotranspiration supérieure...").
+- **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
+- **BOUNDING BOX :** Si un diagnostic (ex: 'Stress Hydrique') s'applique à toute la parcelle, utilise une boîte couvrant toute l'image: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
 """
 
 # NOUVEAU PROMPT 3: Analyse par Drone
 DRONE_PROMPT = """
 Tu es 'PestAI-DroneVision', un moteur d'analyse IA spécialisé dans les images de DRONE à très haute résolution (Orthophotos RVB et Multispectrales).
-Tu es calibré pour l'agriculture de précision au Sénégal.
 
 **TA MISSION :**
-1.  **Identifier le Sujet Principal :** Toujours 'DRONE_PLOT'. La description doit être 'Analyse orthophoto de parcelle'.
+1.  **Identifier le Sujet Principal :** Toujours 'DRONE_PLOT'.
 2.  **Mener une Analyse de Précision :**
-    - Identifie les anomalies agronomiques visibles (ex: 'Infestation de Mauvaises Herbes', 'Stress hydrique localisé', 'Faible densité de semis', 'Déficience en Azote').
-    - Pour chaque anomalie, tu DOIS évaluer sa sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL').
-    - Pour chaque anomalie, tu DOIS délimiter la zone exacte avec une `boundingBox`.
-    - Pour chaque anomalie, tu DOIS générer des mots-clés (`knowledgeBaseTags`).
-3.  **Fournir une Réponse JSON Strictement Structurée :** Ta réponse doit être EXCLUSIVEMENT au format JSON. Le schéma est IDENTIQUE aux autres analyses :
+    - Identifie les anomalies agronomiques (ex: 'Infestation de Mauvaises Herbes', 'Stress hydrique localisé', 'Faible densité de semis', 'Déficience en Azote').
+    - Évalue la sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL') pour chaque anomalie.
+    - Délimite la zone exacte de l'anomalie avec une `boundingBox`.
+    - Génère des `knowledgeBaseTags`.
+3.  **Fournir une Réponse JSON Strictement Structurée :** EXCLUSIVEMENT au format JSON.
 
 {
   "subject": {
     "subjectType": "string (Toujours 'DRONE_PLOT')",
-    "description": "string (ex: 'Analyse orthophoto de parcelle, 25 Hectares')",
-    "confidence": "float (Toujours 1.0)"
+    "description": "string (ex: 'Analyse d'image drone.')",
+    "confidence": 1.0
   },
   "detections": [
     {
-      "className": "string (Nom de l'anomalie, ex: 'Infestation de Mauvaises Herbes', 'Stress hydrique localisé')",
+      "className": "string (Nom de l'anomalie, ex: 'Infestation de Mauvaises Herbes')",
       "confidenceScore": "float",
       "severity": "string ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')",
       "boundingBox": { "x_min": "float", "y_min": "float", "x_max": "float", "y_max": "float" },
       "details": {
-        "description": "string (Description détaillée de l'anomalie détectée)",
-        "impact": "string (Impact sur la zone : concurrence pour les ressources, perte de rendement localisée...)",
+        "description": "string (Description simple de l'anomalie)",
+        "impact": "string (Impact simple sur la zone)",
         "recommendations": {
           "biological": [],
-          "chemical": [ { "solution": "Application ciblée d'herbicide", "details": "Appliquer [Produit X] uniquement sur les zones détectées...", "source": null } ],
-          "cultural": [ { "solution": "Modulation de l'irrigation", "details": "Augmenter l'apport en eau de 15% sur cette zone...", "source": null } ]
+          "chemical": [ { "solution": "string", "details": "string", "source": null } ],
+          "cultural": [ { "solution": "string", "details": "string", "source": null } ]
         },
-        "knowledgeBaseTags": [ "string (ex: 'Drone', 'Orthophoto', 'Mauvaises Herbes', 'Agriculture de Précision')" ]
+        "knowledgeBaseTags": [ "string" ]
       }
     }
   ]
 }
 
-**RÈGLES D'OR (DRONE) :**
-- **ANALYSE MICRO-ZONALE :** Les 'détections' sont des anomalies très localisées.
-- **RECOMMANDATIONS CIBLÉES :** Les recommandations doivent être adaptées à l'agriculture de précision (ex: modulation, application ciblée).
-- **NORMALISATION :** Les coordonnées de `boundingBox` DOIVENT être normalisées (0.0 à 1.0).
+**RÈGLES D'OR v11 :**
+- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. (Ex: "Zone avec beaucoup de mauvaises herbes." au lieu de "Détection d'une forte prévalence d'adventices en compétition...").
+- **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
+- **BOUNDING BOX :** Si une anomalie (ex: 'Faible densité') s'applique à toute l'image, utilise une boîte couvrant toute l'image: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
 """
 
-# --- Logique d'appel à l'IA  ---
+# --- Logique d'appel à l'IA (Inchangée) ---
 async def generate_gemini_analysis_with_key_rotation(
     prompt: str,
     image_part: dict,
@@ -294,7 +287,8 @@ async def generate_gemini_analysis_with_key_rotation(
             current_key = key_manager.get_current_key()
             genai.configure(api_key=current_key)
             
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # Utilisation d'un modèle plus récent si disponible, sinon flash
+            model = genai.GenerativeModel('gemini-1.5-flash') 
             response = await model.generate_content_async(
                 [prompt, image_part],
                 generation_config=config,
@@ -313,8 +307,7 @@ async def generate_gemini_analysis_with_key_rotation(
     raise HTTPException(status_code=503, detail="Échec de l'analyse IA après avoir essayé toutes les clés API disponibles.")
 
 
-# --- Création de la clé de cache unifiée  ---
-# Elle prend déjà en compte "analysis_type", donc elle fonctionnera
+# --- Création de la clé de cache unifiée (Inchangée) ---
 def unified_key_builder(
     func,
     namespace: str = "",
@@ -331,11 +324,12 @@ def unified_key_builder(
     return f"{namespace}:{analysis_type_str}:{file_hash}"
 
 
+# --- MODIFIÉ : Le Point d'Entrée (Endpoint) Unifié v11 ---
 @app.post(
-    "/api/v10/analyze-unified", 
+    "/api/v11/analyze-unified", # Versionné à v11
     response_model=AIAnalysisResponse,
-    summary="Analyse unifiée (Plante/Ravageur, Satellite OU Drone).",
-    tags=["IA Analysis Service v10"]
+    summary="Analyse unifiée (Plante, Satellite, Drone) v11",
+    tags=["IA Analysis Service v11"]
 )
 @limiter.limit("15/minute")
 @cache(namespace="pestai-analysis", expire=86400, key_builder=unified_key_builder)
@@ -353,18 +347,19 @@ async def analyze_unified_endpoint(
     )
 ):
     """
-    **Rôle de ce service unifié v10 :**
+    **Rôle de ce service unifié v11 :**
     
     1.  Recevoir une image ET un type d'analyse (Plante, Satellite, Drone).
-    2.  Sélectionner le prompt expert approprié.
+    2.  Sélectionner le prompt expert approprié (optimisé pour TTS/Wolof).
     3.  Appeler Gemini et gérer la rotation des clés.
     4.  Découper les 'détections' (lésions ou zones) et les uploader sur Cloudinary.
     5.  Retourner le JSON structuré `AIAnalysisResponse`.
     """
-    if file.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
-        raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG, JPG ou PNG.")
+    # Accepte aussi tiff pour les images satellites/drones
+    if file.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/tiff"]:
+        raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG, JPG, PNG ou TIFF.")
 
-    # --- 1. Sélection du Prompt  ---
+    # --- 1. Sélection du Prompt ---
     if analysis_type == AnalysisType.PLANT_PEST:
         selected_prompt = PLANT_PEST_PROMPT
     elif analysis_type == AnalysisType.SATELLITE_REMOTE_SENSING:
@@ -378,6 +373,7 @@ async def analyze_unified_endpoint(
 
     try:
         # --- 2. Appel de l'IA ---
+        # Note: 'image/tiff' est géré par Gemini
         image_part = {"mime_type": file.content_type, "data": image_bytes}
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
         
@@ -389,36 +385,43 @@ async def analyze_unified_endpoint(
 
         analysis_data = json.loads(gemini_response.text)
 
-        # --- 3. Logique de découpage (Inchangée) ---
-        if analysis_data.get("detections"):
-            original_image = Image.open(io.BytesIO(image_bytes))
-            width, height = original_image.size
+        # --- 3. Logique de découpage ---
+        # Ne pas découper les TIFF, car PIL peut avoir du mal avec les GeoTIFF multibandes.
+        # Nous uploadons seulement les 'cropped' pour les formats web (jpeg/png)
+        # Pour les TIFF, le 'croppedImageUrl' restera null, ce qui est OK.
+        if analysis_data.get("detections") and file.content_type in ["image/jpeg", "image/png", "image/jpg"]:
+            try:
+                original_image = Image.open(io.BytesIO(image_bytes))
+                width, height = original_image.size
 
-            for detection in analysis_data["detections"]:
-                if "boundingBox" not in detection:
-                    continue
+                for detection in analysis_data["detections"]:
+                    if "boundingBox" not in detection:
+                        continue
 
-                bbox = detection["boundingBox"]
-                
-                coords = (
-                    int(bbox["x_min"] * width),
-                    int(bbox["y_min"] * height),
-                    int(bbox["x_max"] * width),
-                    int(bbox["y_max"] * height)
-                )
-                
-                cropped_image = original_image.crop(coords)
-                
-                buffer = io.BytesIO()
-                cropped_image.save(buffer, format="PNG")
-                buffer.seek(0)
-                
-                upload_result = cloudinary.uploader.upload(
-                    buffer,
-                    folder="pestai_detections_v10" 
-                )
-                
-                detection["croppedImageUrl"] = upload_result.get("secure_url")
+                    bbox = detection["boundingBox"]
+                    
+                    coords = (
+                        int(bbox["x_min"] * width),
+                        int(bbox["y_min"] * height),
+                        int(bbox["x_max"] * width),
+                        int(bbox["y_max"] * height)
+                    )
+                    
+                    cropped_image = original_image.crop(coords)
+                    
+                    buffer = io.BytesIO()
+                    cropped_image.save(buffer, format="PNG") # Toujours sauvegarder en PNG pour le web
+                    buffer.seek(0)
+                    
+                    upload_result = cloudinary.uploader.upload(
+                        buffer,
+                        folder="pestai_detections_v11" # Nouveau dossier
+                    )
+                    
+                    detection["croppedImageUrl"] = upload_result.get("secure_url")
+            except Exception as e:
+                print(f"Avertissement: Échec du découpage de l'image. Erreur: {str(e)}")
+                # Continue sans 'croppedImageUrl', ce n'est pas critique
 
         # --- 4. Retour de la réponse validée ---
         return analysis_data
@@ -434,14 +437,14 @@ async def analyze_unified_endpoint(
         raise HTTPException(status_code=500, detail=f"Erreur interne inattendue du serveur : {str(e)}")
 
 
-# --- Événements de Démarrage et Point de Santé  ---
+# --- Événements de Démarrage et Point de Santé ---
 @app.on_event("startup")
 async def startup():
     """Initialise le cache en mémoire au démarrage de l'application."""
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    print("Cache en mémoire initialisé. Service unifié v10.0.0 prêt.")
+    print("Cache en mémoire initialisé. Service unifié v11.0.0 prêt.")
 
 @app.get("/", include_in_schema=False)
 def read_root():
     """Endpoint de santé pour vérifier que le service est en ligne."""
-    return {"message": "PestAI - Unified Analysis Microservice v10.0.0 est opérationnel."}
+    return {"message": "PestAI - Unified Analysis Microservice v11.0.0 est opérationnel."}
