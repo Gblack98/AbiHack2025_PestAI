@@ -74,10 +74,10 @@ cloudinary.config(
 # --- Configuration du Rate Limiter (inchangée) ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
-# --- Initialisation de l'Application FastAPI (MODIFIÉE) ---
+# --- Initialisation de l'Application FastAPI  ---
 app = FastAPI(
     title="PestAI - Unified Analysis Microservice",
-    description="API v11.0. Service unifié (Plante, Satellite, Drone) avec prompts TTS optimisés.",
+    description="API v11.0. Service unifié (Plante, Satellite, Drone)",
     version="11.0.0"
 )
 app.state.limiter = limiter
@@ -137,7 +137,7 @@ class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
 
-# --- NOUVEAU: Banque de Prompts v11 (Optimisée TTS) ---
+# --- NOUVEAU: Banque de Prompts v11  ---
 
 # PROMPT 1: Analyse de Proximité (Plantes & Ravageurs)
 PLANT_PEST_PROMPT = """
@@ -347,7 +347,7 @@ async def analyze_unified_endpoint(
     )
 ):
     """
-    **Rôle de ce service unifié v11 :**
+    **Rôle de ce service v11 :**
     
     1.  Recevoir une image ET un type d'analyse (Plante, Satellite, Drone).
     2.  Sélectionner le prompt expert approprié (optimisé pour TTS/Wolof).
