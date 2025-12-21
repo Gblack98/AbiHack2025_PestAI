@@ -288,7 +288,7 @@ async def generate_gemini_analysis_with_key_rotation(
             genai.configure(api_key=current_key)
             
             # Utilisation d'un modèle plus récent si disponible, sinon flash
-            model = genai.GenerativeModel('gemini-1.5-flash') 
+            model = genai.GenerativeModel('gemini-2.5-flash') 
             response = await model.generate_content_async(
                 [prompt, image_part],
                 generation_config=config,
