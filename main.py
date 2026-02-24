@@ -168,12 +168,18 @@ async def voice_summary(
         temperature=0.7,
         max_output_tokens=300,
     )
-    genai.configure(api_key=key_manager.get_current_key())
-    voice_model = genai.GenerativeModel("gemini-2.0-flash")
-    response = await voice_model.generate_content_async(
-        [prompt], generation_config=generation_config
-    )
-    return {"text": response.text.strip(), "language": "wo"}
+    try:
+        genai.configure(api_key=key_manager.get_current_key())
+        voice_model = genai.GenerativeModel("gemini-2.0-flash")
+        response = await voice_model.generate_content_async(
+            [prompt], generation_config=generation_config,
+            request_options={"timeout": 50},
+        )
+        return {"text": response.text.strip(), "language": "wo"}
+    except google.api_core.exceptions.GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Gemini voix indisponible : {e.message}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Erreur voix : {type(e).__name__}: {e}")
 
 
 # --- Helper : PCM brut → WAV ---
@@ -210,11 +216,17 @@ async def voice_audio(
         "{analysis_json}", json.dumps(analysis, ensure_ascii=False)
     )
     text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
-    genai.configure(api_key=key_manager.get_current_key())
-    voice_model = genai.GenerativeModel("gemini-2.0-flash")
-    wolof_text = (
-        await voice_model.generate_content_async([prompt], generation_config=text_config)
-    ).text.strip()
+    try:
+        genai.configure(api_key=key_manager.get_current_key())
+        voice_model = genai.GenerativeModel("gemini-2.0-flash")
+        wolof_resp = await voice_model.generate_content_async(
+            [prompt], generation_config=text_config, request_options={"timeout": 50}
+        )
+        wolof_text = wolof_resp.text.strip()
+    except google.api_core.exceptions.GoogleAPICallError as e:
+        raise HTTPException(status_code=503, detail=f"Gemini texte indisponible : {e.message}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Erreur texte : {type(e).__name__}: {e}")
 
     # 2. Synthèse vocale via Gemini 2.0 Flash REST
     api_key = key_manager.get_current_key()
