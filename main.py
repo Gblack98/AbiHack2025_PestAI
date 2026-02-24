@@ -276,3 +276,17 @@ def health():
         "model": "gemini-3-flash-preview",
         "voice_keys_loaded": len(voice_key_manager.keys),
     }
+
+
+@app.get("/debug/models", include_in_schema=False)
+async def list_voice_models():
+    """Liste les modèles disponibles pour les clés voix."""
+    api_key = voice_key_manager.get_current_key()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}&pageSize=50"
+        )
+    if r.status_code != 200:
+        return {"error": r.text[:300]}
+    models = [m["name"] for m in r.json().get("models", [])]
+    return {"models": models, "count": len(models)}
