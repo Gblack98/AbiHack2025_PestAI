@@ -1,20 +1,17 @@
 import os
 import json
 import hashlib
-import asyncio
 import io
 import itertools
 from contextlib import asynccontextmanager
 from enum import Enum
 from typing import List, Optional
 
-# --- Dépendances ---
 import google.generativeai as genai
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-# --- Dépendances pour l'optimisation des quotas ---
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
@@ -23,20 +20,14 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import google.api_core.exceptions
 
-# --- Dépendances pour le traitement d'image et Cloudinary ---
 import cloudinary
 import cloudinary.uploader
 from PIL import Image
 
-# --- Configuration Initiale ---
 load_dotenv()
 
-# --- GESTIONNAIRE DE CLÉS API GEMINI ---
+# --- KeyManager ---
 class KeyManager:
-    """
-    Une classe pour gérer une liste de clés API et permettre de passer
-    à la suivante en cas d'erreur de quota.
-    """
     def __init__(self, keys: List[str]):
         if not keys or all(k == '' for k in keys):
             raise ValueError("La liste des clés API Gemini ne peut pas être vide.")
@@ -53,44 +44,39 @@ class KeyManager:
         print(f"Limite de quota atteinte. Passage à la clé API suivante : ...{self._current_key[-4:]}")
         return self._current_key
 
-# --- Chargement et configuration des clés Gemini ---
 gemini_api_keys_str = os.getenv("GEMINI_API_KEYS")
 if not gemini_api_keys_str:
-    raise ValueError("Variable d'environnement GEMINI_API_KEYS non trouvée. Assure-toi qu'elle est dans le fichier .env.")
+    raise ValueError("Variable d'environnement GEMINI_API_KEYS non trouvée.")
 gemini_api_keys = [key.strip() for key in gemini_api_keys_str.split(',') if key.strip()]
 key_manager = KeyManager(gemini_api_keys)
 
-# --- Configuration Cloudinary ---
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# --- Configuration du Rate Limiter ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
 
-# --- Lifespan (remplace @app.on_event("startup")) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    print("Cache en mémoire initialisé. Le service est prêt à analyser.")
+    print("Cache en mémoire initialisé. Le service v8.5 est prêt à analyser.")
     yield
 
 
-# --- Initialisation de l'Application FastAPI ---
 app = FastAPI(
     title="PestAI - IA Analysis Microservice",
-    description="API v8.5. Service d'analyse robuste avec rotation automatique des clés API Gemini.",
+    description="API v8.5. Version de référence — prompt universel, rotation de clés Gemini.",
     version="8.5.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# --- Structures de Données Pydantic ---
+# --- Modèles Pydantic ---
 class SeverityLevel(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -125,7 +111,7 @@ class Detection(BaseModel):
     severity: SeverityLevel
     boundingBox: BoundingBox
     details: DetailedInfo
-    croppedImageUrl: Optional[str] = Field(None, description="URL de l'image découpée montrant la détection.")
+    croppedImageUrl: Optional[str] = Field(None)
 
 class AnalysisSubject(BaseModel):
     subjectType: str
@@ -136,82 +122,61 @@ class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
 
-# --- Prompt Universel ---
+
+# --- Prompt universel ---
 UNIVERSAL_PROMPT = """
-Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondiale. Ta seule fonction est de recevoir une image et de retourner une analyse experte complète, structurée et riche en données.
+Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondiale.
+Ta seule fonction est de recevoir une image et de retourner une analyse experte complète.
 
-**TA MISSION :**
-1.  **Identifier le Sujet Principal :** Détermine si le sujet est une 'PLANT', un 'PEST', ou 'UNKNOWN'.
-2.  **Mener une Analyse Complète :**
-    - Identifie l'espèce du sujet et chaque problème (maladie/ravageur).
-    - Pour chaque détection, tu DOIS évaluer sa sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL').
-    - Pour chaque détection, tu DOIS générer des mots-clés pertinents (`knowledgeBaseTags`).
-3.  **Fournir une Réponse JSON Strictement Structurée :** Ta réponse doit être EXCLUSIVEMENT au format JSON. Ne renvoie AUCUN texte avant ou après. Le schéma est le suivant :
+Identifie le sujet ('PLANT', 'PEST', ou 'UNKNOWN'), chaque problème détecté,
+sa sévérité ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL'), et fournis des recommandations groupées.
 
+Réponds EXCLUSIVEMENT en JSON avec ce schéma :
 {
-  "subject": {
-    "subjectType": "string ('PLANT', 'PEST', or 'UNKNOWN')",
-    "description": "string (ex: 'Plant de Maïs (Zea mays)')",
-    "confidence": "float (0.0-1.0)"
-  },
+  "subject": { "subjectType": "string", "description": "string", "confidence": "float" },
   "detections": [
     {
-      "className": "string (Nom du problème)",
+      "className": "string",
       "confidenceScore": "float",
-      "severity": "string (Choisis parmi 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL')",
+      "severity": "string",
       "boundingBox": { "x_min": "float", "y_min": "float", "x_max": "float", "y_max": "float" },
       "details": {
-        "description": "string (Description détaillée)",
-        "impact": "string (Impact sur les cultures)",
+        "description": "string",
+        "impact": "string",
         "recommendations": {
-          "biological": [ { "solution": "string", "details": "string", "source": "string (URL)" } ],
-          "chemical": [ { "solution": "string", "details": "string", "source": "string (URL)" } ],
-          "cultural": [ { "solution": "string", "details": "string", "source": "string (URL)" } ]
+          "biological": [ { "solution": "string", "details": "string", "source": "string|null" } ],
+          "chemical":   [ { "solution": "string", "details": "string", "source": "string|null" } ],
+          "cultural":   [ { "solution": "string", "details": "string", "source": "string|null" } ]
         },
-        "knowledgeBaseTags": [ "string (Liste de mots-clés pertinents pour la recherche)" ]
+        "knowledgeBaseTags": ["string"]
       }
     }
   ]
 }
-
-**RÈGLES D'OR :**
-- **SÉVÉRITÉ OBLIGATOIRE :** Le champ `severity` est crucial.
-- **TAGS OBLIGATOIRES :** Le champ `knowledgeBaseTags` doit être fourni.
-- **GROUPEMENT & SOURÇAGE :** Les recommandations DOIVENT être groupées et sourcées. Si une catégorie est vide, renvoie un tableau vide.
-- **NORMALISATION :** Les coordonnées de `boundingBox` DOIVENT être normalisées (0.0 à 1.0).
 """
 
-# --- Logique d'appel à l'IA avec rotation de clés ---
-async def generate_gemini_analysis_with_key_rotation(image_part: dict, config: genai.types.GenerationConfig):
-    """
-    Tente d'appeler l'API Gemini. Si une erreur de quota survient,
-    bascule vers la clé suivante jusqu'à avoir essayé toutes les clés.
-    """
-    initial_key = key_manager.get_current_key()
 
+async def generate_gemini_analysis_with_key_rotation(image_part: dict, config: genai.types.GenerationConfig):
+    initial_key = key_manager.get_current_key()
     for _ in range(len(key_manager.keys)):
         try:
             current_key = key_manager.get_current_key()
             genai.configure(api_key=current_key)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel('gemini-3-flash-preview')
             response = await model.generate_content_async(
                 [UNIVERSAL_PROMPT, image_part],
                 generation_config=config,
                 request_options={'timeout': 120}
             )
             return response
-
         except (google.api_core.exceptions.ResourceExhausted, google.api_core.exceptions.PermissionDenied) as e:
-            print(f"Erreur de quota ou de permission pour la clé ...{current_key[-4:]}.")
+            print(f"Erreur quota pour la clé ...{current_key[-4:]} : {e}")
             key_manager.switch_to_next_key()
             if key_manager.get_current_key() == initial_key:
-                print("Toutes les clés API ont été essayées et ont échoué.")
-                raise HTTPException(status_code=429, detail="Toutes les clés API Gemini sont indisponibles ou ont dépassé leur quota.")
-
-    raise HTTPException(status_code=503, detail="Échec de l'analyse IA après avoir essayé toutes les clés API disponibles.")
+                raise HTTPException(status_code=429, detail="Toutes les clés API Gemini ont dépassé leur quota.")
+    raise HTTPException(status_code=503, detail="Échec de l'analyse IA après rotation de toutes les clés.")
 
 
-# --- Création de la clé de cache ---
 def image_key_builder(func, namespace: str = "", *, request: Request, response: Response, **kwargs):
     file_content = kwargs["file"].file.read()
     kwargs["file"].file.seek(0)
@@ -219,29 +184,21 @@ def image_key_builder(func, namespace: str = "", *, request: Request, response: 
     return f"{namespace}:{file_hash}"
 
 
-# --- Point d'Entrée du Microservice ---
 @app.post(
     "/api/v8/analyze-image",
     response_model=AIAnalysisResponse,
-    summary="Prend une image, retourne une analyse IA et upload les détections.",
-    tags=["IA Analysis Service"]
+    summary="Analyse IA universelle v8.5 (version de référence)",
+    tags=["PestAI v8.5 (référence)"],
 )
 @limiter.limit("15/minute")
-@cache(namespace="pestai-analysis", expire=86400, key_builder=image_key_builder)
+@cache(namespace="pestai-v8", expire=86400, key_builder=image_key_builder)
 async def analyze_image_endpoint(
     request: Request,
     response: Response,
-    file: UploadFile = File(..., description="Fichier image (JPEG, PNG) de la plante ou du ravageur."),
+    file: UploadFile = File(..., description="Fichier image (JPEG, PNG)."),
 ):
-    """
-    **Rôle de ce service :**
-    - Retourne un JSON pur et validé, prêt à être consommé.
-    - Pour chaque détection, découpe l'image originale, l'envoie sur Cloudinary et
-      ajoute l'URL de l'image découpée dans la réponse.
-    - Gère les pannes de clés API en basculant automatiquement vers la suivante.
-    """
     if file.content_type not in ["image/jpeg", "image/png"]:
-        raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG ou PNG.")
+        raise HTTPException(status_code=415, detail="Format non supporté. Utilisez JPEG ou PNG.")
 
     image_bytes = await file.read()
 
@@ -254,36 +211,37 @@ async def analyze_image_endpoint(
         if analysis_data.get("detections"):
             original_image = Image.open(io.BytesIO(image_bytes))
             width, height = original_image.size
-
             for detection in analysis_data["detections"]:
-                bbox = detection["boundingBox"]
-                coords = (
-                    int(bbox["x_min"] * width),
-                    int(bbox["y_min"] * height),
-                    int(bbox["x_max"] * width),
-                    int(bbox["y_max"] * height)
-                )
-                cropped_image = original_image.crop(coords)
-                buffer = io.BytesIO()
-                cropped_image.save(buffer, format="PNG")
-                buffer.seek(0)
-                upload_result = cloudinary.uploader.upload(buffer, folder="pestai_detections")
-                detection["croppedImageUrl"] = upload_result.get("secure_url")
+                detection.setdefault("croppedImageUrl", None)
+                bbox = detection.get("boundingBox")
+                if not bbox:
+                    continue
+                try:
+                    coords = (
+                        int(bbox["x_min"] * width), int(bbox["y_min"] * height),
+                        int(bbox["x_max"] * width), int(bbox["y_max"] * height),
+                    )
+                    if coords[0] >= coords[2] or coords[1] >= coords[3]:
+                        continue
+                    cropped = original_image.crop(coords)
+                    buffer = io.BytesIO()
+                    cropped.save(buffer, format="PNG")
+                    buffer.seek(0)
+                    result = cloudinary.uploader.upload(buffer, folder="pestai_detections")
+                    detection["croppedImageUrl"] = result.get("secure_url")
+                except Exception as e:
+                    print(f"Avertissement crop '{detection.get('className', '?')}' : {e}")
 
         return analysis_data
 
     except json.JSONDecodeError:
-        error_text = gemini_response.text if 'gemini_response' in locals() else "Pas de réponse de l'IA"
-        raise HTTPException(status_code=502, detail=f"Réponse invalide du service d'IA (non-JSON): {error_text}")
-
+        raise HTTPException(status_code=502, detail="Réponse non-JSON reçue du modèle IA.")
     except google.api_core.exceptions.GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Erreur non gérée de l'API Google : {e.message}")
-
+        raise HTTPException(status_code=503, detail=f"Erreur API Google : {e.message}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur interne inattendue du serveur : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur interne : {str(e)}")
 
 
-# --- Point de Santé ---
 @app.get("/", include_in_schema=False)
 def read_root():
-    return {"message": "PestAI - IA Analysis Microservice v8.5 est opérationnel."}
+    return {"status": "ok", "service": "PestAI v8.5 (référence)", "model": "gemini-3-flash-preview"}
