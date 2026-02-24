@@ -4,6 +4,7 @@ import hashlib
 import asyncio
 import io
 import itertools
+from contextlib import asynccontextmanager
 from enum import Enum
 from typing import List, Optional
 
@@ -30,7 +31,7 @@ from PIL import Image
 # --- Configuration Initiale ---
 load_dotenv()
 
-# --- GESTIONNAIRE DE CLÉS API GEMINI (v2 - Inchangé) ---
+# --- GESTIONNAIRE DE CLÉS API GEMINI ---
 class KeyManager:
     """
     Gestionnaire de clés API asynchrone et "coroutine-safe"
@@ -52,46 +53,54 @@ class KeyManager:
         async with self._lock:
             key_before_switch = self._current_key
             self._current_key = next(self._key_iterator)
-            
             if key_before_switch != self._current_key:
                 print(f"Limite de quota atteinte. Passage à la clé API suivante : ...{self._current_key[-4:]}")
             return self._current_key
 
-# --- Configuration des clés Gemini (inchangée) ---
+# --- Configuration des clés Gemini ---
 gemini_api_keys_str = os.getenv("GEMINI_API_KEYS")
 if not gemini_api_keys_str:
     raise ValueError("Variable d'environnement GEMINI_API_KEYS non trouvée.")
 gemini_api_keys = [key.strip() for key in gemini_api_keys_str.split(',') if key.strip()]
 key_manager = KeyManager(gemini_api_keys)
 
-# --- Configuration Cloudinary (inchangée) ---
+# --- Configuration Cloudinary ---
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# --- Configuration du Rate Limiter (inchangée) ---
+# --- Configuration du Rate Limiter ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
-# --- Initialisation de l'Application FastAPI  ---
+
+# --- Lifespan (remplace @app.on_event("startup")) ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+    print("Cache en mémoire initialisé. Service unifié v11.0.0 prêt.")
+    yield
+
+
+# --- Initialisation de l'Application FastAPI ---
 app = FastAPI(
     title="PestAI - Unified Analysis Microservice",
     description="API v11.0. Service unifié (Plante, Satellite, Drone)",
-    version="11.0.0"
+    version="11.0.0",
+    lifespan=lifespan
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# --- Types d'analyse possibles (Inchangé) ---
+# --- Types d'analyse possibles ---
 class AnalysisType(str, Enum):
     PLANT_PEST = "PLANT_PEST"
     SATELLITE_REMOTE_SENSING = "SATELLITE_REMOTE_SENSING"
     DRONE_ANALYSIS = "DRONE_ANALYSIS"
 
-# --- Structures de Données Pydantic (Inchangées) ---
-# ... [Toutes vos classes Pydantic restent identiques] ...
+# --- Structures de Données Pydantic ---
 class SeverityLevel(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -137,9 +146,8 @@ class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
 
-# --- NOUVEAU: Banque de Prompts v11  ---
+# --- Banque de Prompts v11 ---
 
-# PROMPT 1: Analyse de Proximité (Plantes & Ravageurs)
 PLANT_PEST_PROMPT = """
 Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondiale. Ta fonction est l'analyse d'images de PROXIMITÉ (feuilles, tiges, insectes).
 
@@ -178,13 +186,12 @@ Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondial
 }
 
 **RÈGLES D'OR v11 :**
-- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. Évite le jargon complexe. (Ex: "Cette maladie bloque les feuilles. Le rendement va baisser." au lieu de "Cette pathologie fongique inhibe la photosynthèse, induisant une sénescence précoce...").
+- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. Évite le jargon complexe.
 - **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
 - **SÉVÉRITÉ :** Le champ `severity` est obligatoire.
 - **BOUNDING BOX :** Les boîtes doivent cibler la lésion ou le ravageur.
 """
 
-# PROMPT 2: Analyse Satellite (Télédétection)
 SATELLITE_PROMPT = """
 Tu es 'PestAI-RemoteSensing', un moteur d'analyse expert en agronomie et en télédétection. Ta fonction est l'analyse d'images SATELLITES (ex: Sentinel-2, Landsat) de parcelles agricoles.
 
@@ -224,12 +231,11 @@ Tu es 'PestAI-RemoteSensing', un moteur d'analyse expert en agronomie et en tél
 }
 
 **RÈGLES D'OR v11 :**
-- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. Évite le jargon. (Ex: "La parcelle manque d'eau. Les plantes souffrent." au lieu de "L'indice de stress hydrique indique une évapotranspiration supérieure...").
-- **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
-- **BOUNDING BOX :** Si un diagnostic (ex: 'Stress Hydrique') s'applique à toute la parcelle, utilise une boîte couvrant toute l'image: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
+- **LANGAGE (TRÈS IMPORTANT) :** Utilise des phrases simples pour le TTS Wolof.
+- **CONCISION :** 1-2 phrases maximum.
+- **BOUNDING BOX :** Si le diagnostic s'applique à toute la parcelle: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
 """
 
-# NOUVEAU PROMPT 3: Analyse par Drone
 DRONE_PROMPT = """
 Tu es 'PestAI-DroneVision', un moteur d'analyse IA spécialisé dans les images de DRONE à très haute résolution (Orthophotos RVB et Multispectrales).
 
@@ -269,26 +275,24 @@ Tu es 'PestAI-DroneVision', un moteur d'analyse IA spécialisé dans les images 
 }
 
 **RÈGLES D'OR v11 :**
-- **LANGAGE (TRÈS IMPORTANT) :** Les champs `description`, `impact`, `solution` et `details` seront traduits en Wolof et lus par une IA vocale (TTS). Utilise des phrases **simples, courtes et directes**. (Ex: "Zone avec beaucoup de mauvaises herbes." au lieu de "Détection d'une forte prévalence d'adventices en compétition...").
-- **CONCISION :** Les descriptions et impacts doivent faire 1-2 phrases maximum.
-- **BOUNDING BOX :** Si une anomalie (ex: 'Faible densité') s'applique à toute l'image, utilise une boîte couvrant toute l'image: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
+- **LANGAGE (TRÈS IMPORTANT) :** Utilise des phrases simples pour le TTS Wolof.
+- **CONCISION :** 1-2 phrases maximum.
+- **BOUNDING BOX :** Si l'anomalie s'applique à toute l'image: `{'x_min': 0.0, 'y_min': 0.0, 'x_max': 1.0, 'y_max': 1.0}`.
 """
 
-# --- Logique d'appel à l'IA (Inchangée) ---
+# --- Logique d'appel à l'IA avec rotation de clés ---
 async def generate_gemini_analysis_with_key_rotation(
     prompt: str,
     image_part: dict,
     config: genai.types.GenerationConfig
 ):
     initial_key = key_manager.get_current_key()
-    
+
     for _ in range(len(key_manager.keys)):
         try:
             current_key = key_manager.get_current_key()
             genai.configure(api_key=current_key)
-            
-            # Utilisation d'un modèle plus récent si disponible, sinon flash
-            model = genai.GenerativeModel('gemini-2.5-flash') 
+            model = genai.GenerativeModel('gemini-2.5-flash')
             response = await model.generate_content_async(
                 [prompt, image_part],
                 generation_config=config,
@@ -299,15 +303,14 @@ async def generate_gemini_analysis_with_key_rotation(
         except (google.api_core.exceptions.ResourceExhausted, google.api_core.exceptions.PermissionDenied) as e:
             print(f"Erreur de quota/permission pour la clé ...{current_key[-4:]}.")
             await key_manager.switch_to_next_key_async()
-            
             if key_manager.get_current_key() == initial_key:
                 print("Toutes les clés API ont été essayées et ont échoué.")
                 raise HTTPException(status_code=429, detail="Toutes les clés API Gemini sont indisponibles ou ont dépassé leur quota.")
-    
+
     raise HTTPException(status_code=503, detail="Échec de l'analyse IA après avoir essayé toutes les clés API disponibles.")
 
 
-# --- Création de la clé de cache unifiée (Inchangée) ---
+# --- Création de la clé de cache unifiée ---
 def unified_key_builder(
     func,
     namespace: str = "",
@@ -324,9 +327,9 @@ def unified_key_builder(
     return f"{namespace}:{analysis_type_str}:{file_hash}"
 
 
-# --- MODIFIÉ : Le Point d'Entrée (Endpoint) Unifié v11 ---
+# --- Point d'Entrée Unifié v11 ---
 @app.post(
-    "/api/v11/analyze-unified", # Versionné à v11
+    "/api/v11/analyze-unified",
     response_model=AIAnalysisResponse,
     summary="Analyse unifiée (Plante, Satellite, Drone) v11",
     tags=["IA Analysis Service v11"]
@@ -336,30 +339,27 @@ def unified_key_builder(
 async def analyze_unified_endpoint(
     request: Request,
     response: Response,
-    
     analysis_type: AnalysisType = Form(
         ...,
         description="Le type d'analyse: 'PLANT_PEST', 'SATELLITE_REMOTE_SENSING', ou 'DRONE_ANALYSIS'."
     ),
     file: UploadFile = File(
         ...,
-        description="Fichier image (JPEG,JPG, PNG). Photo de proximité, image satellite ou orthophoto de drone."
+        description="Fichier image (JPEG, JPG, PNG). Photo de proximité, image satellite ou orthophoto de drone."
     )
 ):
     """
     **Rôle de ce service v11 :**
-    
+
     1.  Recevoir une image ET un type d'analyse (Plante, Satellite, Drone).
     2.  Sélectionner le prompt expert approprié (optimisé pour TTS/Wolof).
     3.  Appeler Gemini et gérer la rotation des clés.
     4.  Découper les 'détections' (lésions ou zones) et les uploader sur Cloudinary.
     5.  Retourner le JSON structuré `AIAnalysisResponse`.
     """
-    # Accepte aussi tiff pour les images satellites/drones
     if file.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/tiff"]:
         raise HTTPException(status_code=415, detail="Format d'image non supporté. Utilisez JPEG, JPG, PNG ou TIFF.")
 
-    # --- 1. Sélection du Prompt ---
     if analysis_type == AnalysisType.PLANT_PEST:
         selected_prompt = PLANT_PEST_PROMPT
     elif analysis_type == AnalysisType.SATELLITE_REMOTE_SENSING:
@@ -372,11 +372,9 @@ async def analyze_unified_endpoint(
     image_bytes = await file.read()
 
     try:
-        # --- 2. Appel de l'IA ---
-        # Note: 'image/tiff' est géré par Gemini
         image_part = {"mime_type": file.content_type, "data": image_bytes}
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
-        
+
         gemini_response = await generate_gemini_analysis_with_key_rotation(
             prompt=selected_prompt,
             image_part=image_part,
@@ -385,10 +383,6 @@ async def analyze_unified_endpoint(
 
         analysis_data = json.loads(gemini_response.text)
 
-        # --- 3. Logique de découpage ---
-        # Ne pas découper les TIFF, car PIL peut avoir du mal avec les GeoTIFF multibandes.
-        # Nous uploadons seulement les 'cropped' pour les formats web (jpeg/png)
-        # Pour les TIFF, le 'croppedImageUrl' restera null, ce qui est OK.
         if analysis_data.get("detections") and file.content_type in ["image/jpeg", "image/png", "image/jpg"]:
             try:
                 original_image = Image.open(io.BytesIO(image_bytes))
@@ -397,39 +391,28 @@ async def analyze_unified_endpoint(
                 for detection in analysis_data["detections"]:
                     if "boundingBox" not in detection:
                         continue
-
                     bbox = detection["boundingBox"]
-                    
                     coords = (
                         int(bbox["x_min"] * width),
                         int(bbox["y_min"] * height),
                         int(bbox["x_max"] * width),
                         int(bbox["y_max"] * height)
                     )
-                    
                     cropped_image = original_image.crop(coords)
-                    
                     buffer = io.BytesIO()
-                    cropped_image.save(buffer, format="PNG") # Toujours sauvegarder en PNG pour le web
+                    cropped_image.save(buffer, format="PNG")
                     buffer.seek(0)
-                    
-                    upload_result = cloudinary.uploader.upload(
-                        buffer,
-                        folder="pestai_detections_v11" # Nouveau dossier
-                    )
-                    
+                    upload_result = cloudinary.uploader.upload(buffer, folder="pestai_detections_v11")
                     detection["croppedImageUrl"] = upload_result.get("secure_url")
             except Exception as e:
                 print(f"Avertissement: Échec du découpage de l'image. Erreur: {str(e)}")
-                # Continue sans 'croppedImageUrl', ce n'est pas critique
 
-        # --- 4. Retour de la réponse validée ---
         return analysis_data
 
     except json.JSONDecodeError:
         error_text = gemini_response.text if 'gemini_response' in locals() else "Pas de réponse de l'IA"
         raise HTTPException(status_code=502, detail=f"Réponse invalide du service d'IA (non-JSON): {error_text}")
-    
+
     except google.api_core.exceptions.GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Erreur non gérée de l'API Google : {e.message}")
 
@@ -437,14 +420,7 @@ async def analyze_unified_endpoint(
         raise HTTPException(status_code=500, detail=f"Erreur interne inattendue du serveur : {str(e)}")
 
 
-# --- Événements de Démarrage et Point de Santé ---
-@app.on_event("startup")
-async def startup():
-    """Initialise le cache en mémoire au démarrage de l'application."""
-    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    print("Cache en mémoire initialisé. Service unifié v11.0.0 prêt.")
-
+# --- Point de Santé ---
 @app.get("/", include_in_schema=False)
 def read_root():
-    """Endpoint de santé pour vérifier que le service est en ligne."""
     return {"message": "PestAI - Unified Analysis Microservice v11.0.0 est opérationnel."}
