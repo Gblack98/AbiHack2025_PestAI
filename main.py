@@ -168,8 +168,12 @@ async def voice_summary(
         temperature=0.7,
         max_output_tokens=300,
     )
-    text = await call_gemini(prompt, None, generation_config, key_manager)
-    return {"text": text.strip(), "language": "wo"}
+    genai.configure(api_key=key_manager.get_current_key())
+    voice_model = genai.GenerativeModel("gemini-1.5-flash")
+    response = await voice_model.generate_content_async(
+        [prompt], generation_config=generation_config
+    )
+    return {"text": response.text.strip(), "language": "wo"}
 
 
 # --- Helper : PCM brut → WAV ---
@@ -206,7 +210,11 @@ async def voice_audio(
         "{analysis_json}", json.dumps(analysis, ensure_ascii=False)
     )
     text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
-    wolof_text = (await call_gemini(prompt, None, text_config, key_manager)).strip()
+    genai.configure(api_key=key_manager.get_current_key())
+    voice_model = genai.GenerativeModel("gemini-1.5-flash")
+    wolof_text = (
+        await voice_model.generate_content_async([prompt], generation_config=text_config)
+    ).text.strip()
 
     # 2. Synthèse vocale via Gemini 2.0 Flash REST
     api_key = key_manager.get_current_key()
