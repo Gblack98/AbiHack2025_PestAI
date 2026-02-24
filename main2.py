@@ -3,7 +3,8 @@ import json
 import hashlib
 import asyncio
 import io
-import itertools # Ajouté pour gérer le cycle des clés
+import itertools
+from contextlib import asynccontextmanager
 from enum import Enum
 from typing import List, Optional
 
@@ -20,7 +21,6 @@ from fastapi_cache.decorator import cache
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-# La librairie "tenacity" n'est plus nécessaire pour l'appel Gemini
 import google.api_core.exceptions
 
 # --- Dépendances pour le traitement d'image et Cloudinary ---
@@ -31,7 +31,7 @@ from PIL import Image
 # --- Configuration Initiale ---
 load_dotenv()
 
-# --- NOUVEAU : GESTIONNAIRE DE CLÉS API GEMINI ---
+# --- GESTIONNAIRE DE CLÉS API GEMINI ---
 class KeyManager:
     """
     Une classe pour gérer une liste de clés API et permettre de passer
@@ -41,56 +41,56 @@ class KeyManager:
         if not keys or all(k == '' for k in keys):
             raise ValueError("La liste des clés API Gemini ne peut pas être vide.")
         self.keys = keys
-        # Crée un cycle infini sur la liste de clés pour la rotation
         self._key_iterator = itertools.cycle(keys)
         self._current_key = next(self._key_iterator)
         print(f"Gestionnaire de clés initialisé avec {len(self.keys)} clé(s).")
 
     def get_current_key(self) -> str:
-        """Retourne la clé actuellement active."""
         return self._current_key
 
     def switch_to_next_key(self) -> str:
-        """Passe à la clé API suivante dans le cycle."""
         self._current_key = next(self._key_iterator)
-        # Affiche uniquement les 4 derniers caractères pour la sécurité
         print(f"Limite de quota atteinte. Passage à la clé API suivante : ...{self._current_key[-4:]}")
         return self._current_key
 
-# --- MODIFIÉ : Chargement et configuration des clés Gemini ---
-# Lit la variable au pluriel depuis le fichier .env
+# --- Chargement et configuration des clés Gemini ---
 gemini_api_keys_str = os.getenv("GEMINI_API_KEYS")
 if not gemini_api_keys_str:
     raise ValueError("Variable d'environnement GEMINI_API_KEYS non trouvée. Assure-toi qu'elle est dans le fichier .env.")
-
-# Transforme la chaîne de caractères "clé1,clé2,clé3" en une liste Python
 gemini_api_keys = [key.strip() for key in gemini_api_keys_str.split(',') if key.strip()]
-
-# Initialise notre gestionnaire de clés avec la liste
 key_manager = KeyManager(gemini_api_keys)
-# --- Fin de la section de configuration Gemini ---
 
-# Configuration Cloudinary (inchangée)
+# --- Configuration Cloudinary ---
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# --- Configuration du Rate Limiter (inchangée) ---
+# --- Configuration du Rate Limiter ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
+
+
+# --- Lifespan (remplace @app.on_event("startup")) ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+    print("Cache en mémoire initialisé. Le service est prêt à analyser.")
+    yield
+
 
 # --- Initialisation de l'Application FastAPI ---
 app = FastAPI(
     title="PestAI - IA Analysis Microservice",
     description="API v8.5. Service d'analyse robuste avec rotation automatique des clés API Gemini.",
-    version="8.5.0"
+    version="8.5.0",
+    lifespan=lifespan
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# --- Structures de Données Pydantic (inchangées) ---
+# --- Structures de Données Pydantic ---
 class SeverityLevel(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -136,7 +136,7 @@ class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
 
-# --- Le Prompt (inchangé) ---
+# --- Prompt Universel ---
 UNIVERSAL_PROMPT = """
 Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondiale. Ta seule fonction est de recevoir une image et de retourner une analyse experte complète, structurée et riche en données.
 
@@ -181,46 +181,37 @@ Tu es 'PestAI-Core', un moteur d'analyse d'images agronomiques de classe mondial
 - **NORMALISATION :** Les coordonnées de `boundingBox` DOIVENT être normalisées (0.0 à 1.0).
 """
 
-# --- NOUVEAU : Logique d'appel à l'IA avec rotation de clés ---
+# --- Logique d'appel à l'IA avec rotation de clés ---
 async def generate_gemini_analysis_with_key_rotation(image_part: dict, config: genai.types.GenerationConfig):
     """
-    Tente d'appeler l'API Gemini. Si une erreur de quota (ResourceExhausted)
-    ou de permission (PermissionDenied) survient, tente à nouveau avec la clé suivante,
-    jusqu'à avoir essayé toutes les clés disponibles une fois.
+    Tente d'appeler l'API Gemini. Si une erreur de quota survient,
+    bascule vers la clé suivante jusqu'à avoir essayé toutes les clés.
     """
-    # Sauvegarde la clé de départ pour savoir quand on a fait un tour complet
     initial_key = key_manager.get_current_key()
-    
+
     for _ in range(len(key_manager.keys)):
         try:
             current_key = key_manager.get_current_key()
-            # Important : on reconfigure la librairie avec la clé active à chaque tentative
             genai.configure(api_key=current_key)
-            
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = await model.generate_content_async(
                 [UNIVERSAL_PROMPT, image_part],
                 generation_config=config,
                 request_options={'timeout': 120}
             )
-            # Si l'appel réussit, on retourne la réponse et on sort de la fonction
             return response
 
         except (google.api_core.exceptions.ResourceExhausted, google.api_core.exceptions.PermissionDenied) as e:
             print(f"Erreur de quota ou de permission pour la clé ...{current_key[-4:]}.")
-            # On passe à la clé suivante et la boucle recommencera avec la nouvelle clé
             key_manager.switch_to_next_key()
-            
-            # Si on est revenu à la clé de départ, on arrête pour éviter une boucle infinie
             if key_manager.get_current_key() == initial_key:
                 print("Toutes les clés API ont été essayées et ont échoué.")
                 raise HTTPException(status_code=429, detail="Toutes les clés API Gemini sont indisponibles ou ont dépassé leur quota.")
-    
-    # Si la boucle se termine sans succès, cela signifie que toutes les clés ont provoqué une erreur
+
     raise HTTPException(status_code=503, detail="Échec de l'analyse IA après avoir essayé toutes les clés API disponibles.")
 
 
-# --- Création de la clé de cache (inchangée) ---
+# --- Création de la clé de cache ---
 def image_key_builder(func, namespace: str = "", *, request: Request, response: Response, **kwargs):
     file_content = kwargs["file"].file.read()
     kwargs["file"].file.seek(0)
@@ -228,7 +219,7 @@ def image_key_builder(func, namespace: str = "", *, request: Request, response: 
     return f"{namespace}:{file_hash}"
 
 
-# --- Le Point d'Entrée (Endpoint) du Microservice ---
+# --- Point d'Entrée du Microservice ---
 @app.post(
     "/api/v8/analyze-image",
     response_model=AIAnalysisResponse,
@@ -257,40 +248,26 @@ async def analyze_image_endpoint(
     try:
         image_part = {"mime_type": file.content_type, "data": image_bytes}
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
-        
-        # --- MODIFIÉ : Appel à la nouvelle fonction robuste avec rotation de clés ---
         gemini_response = await generate_gemini_analysis_with_key_rotation(image_part, generation_config)
-
         analysis_data = json.loads(gemini_response.text)
 
-        # La logique de découpage et d'upload sur Cloudinary reste inchangée
         if analysis_data.get("detections"):
             original_image = Image.open(io.BytesIO(image_bytes))
             width, height = original_image.size
 
             for detection in analysis_data["detections"]:
                 bbox = detection["boundingBox"]
-                
-                # Coordonnées pour le découpage
                 coords = (
                     int(bbox["x_min"] * width),
                     int(bbox["y_min"] * height),
                     int(bbox["x_max"] * width),
                     int(bbox["y_max"] * height)
                 )
-                
                 cropped_image = original_image.crop(coords)
-                
-                # Sauvegarde l'image découpée dans un buffer en mémoire (plus efficace)
                 buffer = io.BytesIO()
                 cropped_image.save(buffer, format="PNG")
                 buffer.seek(0)
-                
-                upload_result = cloudinary.uploader.upload(
-                    buffer,
-                    folder="pestai_detections"
-                )
-                
+                upload_result = cloudinary.uploader.upload(buffer, folder="pestai_detections")
                 detection["croppedImageUrl"] = upload_result.get("secure_url")
 
         return analysis_data
@@ -298,7 +275,7 @@ async def analyze_image_endpoint(
     except json.JSONDecodeError:
         error_text = gemini_response.text if 'gemini_response' in locals() else "Pas de réponse de l'IA"
         raise HTTPException(status_code=502, detail=f"Réponse invalide du service d'IA (non-JSON): {error_text}")
-    
+
     except google.api_core.exceptions.GoogleAPICallError as e:
         raise HTTPException(status_code=503, detail=f"Erreur non gérée de l'API Google : {e.message}")
 
@@ -306,14 +283,7 @@ async def analyze_image_endpoint(
         raise HTTPException(status_code=500, detail=f"Erreur interne inattendue du serveur : {str(e)}")
 
 
-# --- Événements de Démarrage et Point de Santé (inchangés) ---
-@app.on_event("startup")
-async def startup():
-    """Initialise le cache en mémoire au démarrage de l'application."""
-    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    print("Cache en mémoire initialisé. Le service est prêt à analyser.")
-
+# --- Point de Santé ---
 @app.get("/", include_in_schema=False)
 def read_root():
-    """Endpoint de santé pour vérifier que le service est en ligne."""
     return {"message": "PestAI - IA Analysis Microservice v8.5 est opérationnel."}
