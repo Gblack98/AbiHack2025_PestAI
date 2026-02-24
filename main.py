@@ -5,6 +5,10 @@ from contextlib import asynccontextmanager
 import cloudinary
 import google.api_core.exceptions
 import google.generativeai as genai
+import base64
+import struct
+
+import httpx
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
@@ -169,6 +173,83 @@ async def voice_summary(
         return {"text": text.strip(), "language": "wo"}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Erreur génération voix : {str(e)}")
+
+
+# --- Helper : PCM brut → WAV ---
+def _pcm_to_wav(pcm: bytes, sr: int = 24_000, ch: int = 1, bps: int = 16) -> bytes:
+    data_size = len(pcm)
+    byte_rate = sr * ch * bps // 8
+    block_align = ch * bps // 8
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF", 36 + data_size, b"WAVE",
+        b"fmt ", 16, 1, ch, sr, byte_rate, block_align, bps,
+        b"data", data_size,
+    )
+    return header + pcm
+
+
+# --- Endpoint audio wolof (Gemini 2.0 TTS) ---
+@app.post(
+    "/api/v12/voice-audio",
+    summary="Résumé vocal audio en wolof — Gemini 2.0 TTS",
+    tags=["PestAI v12"],
+)
+@limiter.limit("10/minute")
+async def voice_audio(
+    request: Request,
+    analysis: dict = Body(..., description="Résultat JSON de /api/v12/analyze"),
+):
+    """
+    Génère un résumé audio en wolof natif via Gemini 2.0 Flash.
+    Retourne l'audio WAV encodé en base64.
+    """
+    # 1. Génération du texte wolof
+    prompt = WOLOF_VOICE_PROMPT.replace(
+        "{analysis_json}", json.dumps(analysis, ensure_ascii=False)
+    )
+    text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
+    try:
+        wolof_text = await call_gemini(prompt, None, text_config, key_manager)
+        wolof_text = wolof_text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Erreur génération texte : {str(e)}")
+
+    # 2. Synthèse vocale via Gemini 2.0 Flash REST
+    api_key = key_manager.get_current_key()
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.0-flash-exp:generateContent?key={api_key}"
+    )
+    payload = {
+        "contents": [{"parts": [{"text": wolof_text}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {"voiceName": "Aoede"}
+                }
+            },
+        },
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(url, json=payload)
+            r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=503, detail=f"Erreur Gemini TTS : {e.response.text[:300]}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Erreur réseau TTS : {str(e)}")
+
+    resp_data = r.json()
+    try:
+        b64_pcm = resp_data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+        pcm_bytes = base64.b64decode(b64_pcm)
+    except (KeyError, IndexError):
+        raise HTTPException(status_code=502, detail="Réponse TTS inattendue du modèle.")
+
+    wav_bytes = _pcm_to_wav(pcm_bytes)
+    return {"audio_b64": base64.b64encode(wav_bytes).decode(), "text": wolof_text, "format": "wav"}
 
 
 # --- Health check ---
