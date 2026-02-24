@@ -234,7 +234,7 @@ async def voice_audio(
     # 2. Synthèse vocale via Gemini 2.5 Flash Native Audio
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-native-audio-latest:generateContent?key={api_key}"
+        f"gemini-2.5-flash-preview-tts:generateContent?key={api_key}"
     )
     payload = {
         "contents": [{"parts": [{"text": wolof_text}]}],
