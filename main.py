@@ -270,4 +270,9 @@ async def voice_audio(
 # --- Health check ---
 @app.get("/", include_in_schema=False)
 def health():
-    return {"status": "ok", "service": "PestAI v12.0.0", "model": "gemini-3-flash-preview"}
+    return {
+        "status": "ok",
+        "service": "PestAI v12.0.0",
+        "model": "gemini-3-flash-preview",
+        "voice_keys_loaded": len(voice_key_manager.keys),
+    }
