@@ -23,6 +23,7 @@ from app.config import (
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
     GEMINI_API_KEYS,
+    GEMINI_VOICE_KEYS,
     RATE_LIMIT,
 )
 from app.key_manager import KeyManager
@@ -33,6 +34,7 @@ from app.services.gemini import call_gemini
 
 # --- Initialisation des services globaux ---
 key_manager = KeyManager(GEMINI_API_KEYS)
+voice_key_manager = KeyManager(GEMINI_VOICE_KEYS)
 
 cloudinary.config(
     cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -169,7 +171,7 @@ async def voice_summary(
         max_output_tokens=300,
     )
     try:
-        genai.configure(api_key=key_manager.get_current_key())
+        genai.configure(api_key=voice_key_manager.get_current_key())
         voice_model = genai.GenerativeModel("gemini-2.0-flash")
         response = await voice_model.generate_content_async(
             [prompt], generation_config=generation_config,
@@ -217,7 +219,7 @@ async def voice_audio(
     )
     text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
     try:
-        genai.configure(api_key=key_manager.get_current_key())
+        genai.configure(api_key=voice_key_manager.get_current_key())
         voice_model = genai.GenerativeModel("gemini-2.0-flash")
         wolof_resp = await voice_model.generate_content_async(
             [prompt], generation_config=text_config, request_options={"timeout": 50}
@@ -229,7 +231,7 @@ async def voice_audio(
         raise HTTPException(status_code=503, detail=f"Erreur texte : {type(e).__name__}: {e}")
 
     # 2. Synthèse vocale via Gemini 2.0 Flash REST
-    api_key = key_manager.get_current_key()
+    api_key = voice_key_manager.get_current_key()
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"gemini-2.0-flash-exp:generateContent?key={api_key}"
