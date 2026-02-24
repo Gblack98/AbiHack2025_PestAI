@@ -175,7 +175,7 @@ async def voice_summary(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 300},
     }
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     async with httpx.AsyncClient(timeout=50.0) as client:
         r = await client.post(url, json=payload)
     if r.status_code == 200:
@@ -217,24 +217,24 @@ async def voice_audio(
     prompt = WOLOF_VOICE_PROMPT.replace(
         "{analysis_json}", json.dumps(analysis, ensure_ascii=False)
     )
-    text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
-    try:
-        genai.configure(api_key=voice_key_manager.get_current_key())
-        voice_model = genai.GenerativeModel("gemini-1.5-flash")
-        wolof_resp = await voice_model.generate_content_async(
-            [prompt], generation_config=text_config, request_options={"timeout": 50}
-        )
-        wolof_text = wolof_resp.text.strip()
-    except google.api_core.exceptions.GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Gemini texte indisponible : {e.message}")
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Erreur texte : {type(e).__name__}: {e}")
-
-    # 2. Synthèse vocale via Gemini 2.0 Flash REST
     api_key = voice_key_manager.get_current_key()
+    text_payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 300},
+    }
+    async with httpx.AsyncClient(timeout=50.0) as client:
+        tr = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
+            json=text_payload,
+        )
+    if tr.status_code != 200:
+        raise HTTPException(status_code=503, detail=f"Erreur génération texte : {tr.text[:300]}")
+    wolof_text = tr.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    # 2. Synthèse vocale via Gemini 2.5 Flash Native Audio
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash-exp:generateContent?key={api_key}"
+        f"gemini-2.5-flash-native-audio-latest:generateContent?key={api_key}"
     )
     payload = {
         "contents": [{"parts": [{"text": wolof_text}]}],
