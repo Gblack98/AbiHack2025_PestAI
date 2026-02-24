@@ -169,7 +169,7 @@ async def voice_summary(
         max_output_tokens=300,
     )
     genai.configure(api_key=key_manager.get_current_key())
-    voice_model = genai.GenerativeModel("gemini-1.5-flash")
+    voice_model = genai.GenerativeModel("gemini-2.0-flash")
     response = await voice_model.generate_content_async(
         [prompt], generation_config=generation_config
     )
@@ -211,7 +211,7 @@ async def voice_audio(
     )
     text_config = genai.types.GenerationConfig(temperature=0.7, max_output_tokens=300)
     genai.configure(api_key=key_manager.get_current_key())
-    voice_model = genai.GenerativeModel("gemini-1.5-flash")
+    voice_model = genai.GenerativeModel("gemini-2.0-flash")
     wolof_text = (
         await voice_model.generate_content_async([prompt], generation_config=text_config)
     ).text.strip()
