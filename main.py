@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import cloudinary
 import google.api_core.exceptions
 import google.generativeai as genai
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
@@ -23,7 +23,7 @@ from app.config import (
 )
 from app.key_manager import KeyManager
 from app.models import AIAnalysisResponse, AnalysisType
-from app.prompts import DRONE_PROMPT, PLANT_PEST_PROMPT, SATELLITE_PROMPT
+from app.prompts import DRONE_PROMPT, PLANT_PEST_PROMPT, SATELLITE_PROMPT, WOLOF_VOICE_PROMPT
 from app.services.cloudinary import crop_and_upload
 from app.services.gemini import call_gemini
 
@@ -140,6 +140,35 @@ async def analyze(
         )
 
     return analysis_data
+
+
+# --- Endpoint voix wolof ---
+@app.post(
+    "/api/v12/voice-summary",
+    summary="Résumé vocal en wolof",
+    tags=["PestAI v12"],
+)
+@limiter.limit("10/minute")
+async def voice_summary(
+    request: Request,
+    analysis: dict = Body(..., description="Résultat JSON de /api/v12/analyze"),
+):
+    """
+    Génère un résumé vocal court en wolof urbain à partir d'un résultat d'analyse.
+    Retourne le texte prêt à être lu par un moteur TTS.
+    """
+    prompt = WOLOF_VOICE_PROMPT.replace(
+        "{analysis_json}", json.dumps(analysis, ensure_ascii=False)
+    )
+    generation_config = genai.types.GenerationConfig(
+        temperature=0.7,
+        max_output_tokens=300,
+    )
+    try:
+        text = await call_gemini(prompt, None, generation_config, key_manager)
+        return {"text": text.strip(), "language": "wo"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Erreur génération voix : {str(e)}")
 
 
 # --- Health check ---

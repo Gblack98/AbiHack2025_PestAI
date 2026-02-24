@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 async def call_gemini(
     prompt: str,
-    image_part: dict,
+    image_part: dict | None,
     config: genai.types.GenerationConfig,
     key_manager: KeyManager,
 ) -> str:
@@ -31,8 +31,9 @@ async def call_gemini(
         try:
             genai.configure(api_key=current_key)
             model = genai.GenerativeModel(GEMINI_MODEL)
+            contents = [prompt, image_part] if image_part else [prompt]
             response = await model.generate_content_async(
-                [prompt, image_part],
+                contents,
                 generation_config=config,
                 request_options={"timeout": 120},
             )
