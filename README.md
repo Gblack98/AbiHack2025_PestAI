@@ -1,17 +1,17 @@
 # 🌿 PestAI — Agricultural AI Analysis API
 
 API de détection agronomique par intelligence artificielle, développée dans le cadre du hackathon **AbiHack 2025**.  
-Elle analyse des images de plantes, de satellites et de drones pour identifier maladies, ravageurs et anomalies agricoles, avec des recommandations adaptées — optimisées pour une lecture vocale en **Wolof**.
+Elle analyse des images de plantes, de satellites et de drones pour identifier maladies, ravageurs et anomalies agricoles — avec des recommandations optimisées pour une lecture vocale en **Wolof**.
 
 ---
 
 ## 🎯 Objectif
 
-Fournir un microservice d'analyse d'images agricoles accessible via API REST, capable de :
-- Détecter des maladies et ravageurs sur des cultures
+Fournir un microservice d'analyse d'images agricoles via API REST, capable de :
+- Détecter maladies et ravageurs sur des cultures (proximité)
 - Analyser des parcelles depuis des images satellites ou drones
 - Retourner des recommandations structurées (biologiques, chimiques, culturales)
-- Générer des réponses simples adaptées à un système TTS (lecture vocale en Wolof)
+- Générer des réponses simples adaptées à un système TTS en Wolof
 
 ---
 
@@ -20,49 +20,64 @@ Fournir un microservice d'analyse d'images agricoles accessible via API REST, ca
 ```
 AbiHack2025_PestAI/
 │
-├── main.py                          # API v11.0 — Version unifiée (production)
+├── main.py                          # API v12 — Version production (entry point)
 ├── main2.py                         # API v8.5 — Version de référence (prompt universel)
-├── Dockerfile                       # Build multi-étapes, sécurisé
-├── .dockerignore                    # Fichiers exclus du build Docker
-├── .gitignore                       # Fichiers exclus de Git
-├── requirements.txt                 # Dépendances épinglées
+│
+├── app/                             # Modules de l'application
+│   ├── config.py                    # Variables d'environnement et constantes
+│   ├── models.py                    # Schémas Pydantic (requêtes / réponses)
+│   ├── prompts.py                   # Prompts experts (Plante, Satellite, Drone)
+│   ├── key_manager.py               # Rotation async des clés API Gemini
+│   └── services/
+│       ├── gemini.py                # Appel Gemini avec gestion d'erreurs
+│       └── cloudinary.py            # Découpage des zones et upload Cloudinary
+│
+├── tests/
+│   ├── conftest.py                  # Fixtures et env vars de test
+│   └── test_api.py                  # Tests des endpoints et des modules
+│
+├── Dockerfile                       # Build multi-étapes, user non-root
+├── .dockerignore
+├── .gitignore
 ├── .env.example                     # Template des variables d'environnement
-└── Documentation_API_Hackathon.pdf  # Documentation officielle du hackathon
+├── requirements.txt                 # Dépendances épinglées
+└── Documentation_API_Hackathon.pdf  # Doc officielle du hackathon
 ```
 
 ---
 
-## 🔄 Versions de l'API
+## 🔄 Versions
 
 | Version | Fichier | Endpoint | Description |
 |---|---|---|---|
-| **v11.0** | `main.py` | `/api/v11/analyze-unified` | 3 types d'analyse spécialisés (Plante, Satellite, Drone) |
-| **v8.5** | `main2.py` | `/api/v8/analyze-image` | Prompt universel, analyse plante/ravageur uniquement |
+| **v12** | `main.py` | `/api/v12/analyze` | Architecture modulaire, 3 prompts spécialisés |
+| **v8.5** | `main2.py` | `/api/v8/analyze-image` | Version de référence, prompt universel |
 
 ---
 
-## 🦠 Types d'analyse (v11)
+## 🦠 Types d'analyse (v12)
 
 | Type | Description |
 |---|---|
 | `PLANT_PEST` | Photo en proximité — feuilles, tiges, insectes |
 | `SATELLITE_REMOTE_SENSING` | Images satellites (Sentinel-2, Landsat) de parcelles |
-| `DRONE_ANALYSIS` | Orthophotos haute résolution de zones agricoles |
+| `DRONE_ANALYSIS` | Orthophotos haute résolution |
 
 ---
 
-## 📦 Technologies
+## 📦 Stack technique
 
 | Outil | Rôle |
 |---|---|
 | FastAPI | Framework API REST asynchrone |
-| Google Gemini (`gemini-2.5-flash`) | Modèle IA multimodal pour l'analyse d'images |
+| Gemini 3 Flash Preview | Modèle IA multimodal (vision + texte) |
 | Cloudinary | Stockage des zones détectées (crops) |
-| Pydantic | Validation et sérialisation des données |
-| slowapi | Rate limiting (15 req/min) |
-| fastapi-cache2 | Cache en mémoire (TTL 24h, clé = hash SHA-256 de l'image) |
-| Docker | Conteneurisation pour le déploiement |
+| Pydantic | Validation et sérialisation JSON |
+| slowapi | Rate limiting — 15 req/min |
+| fastapi-cache2 | Cache en mémoire (TTL 24h, clé = SHA-256 image) |
+| Docker | Conteneurisation |
 | Gunicorn + Uvicorn | Serveur ASGI de production |
+| pytest | Tests unitaires et d'intégration |
 
 ---
 
@@ -75,48 +90,40 @@ git clone https://github.com/Gblack98/AbiHack2025_PestAI.git
 cd AbiHack2025_PestAI
 ```
 
-### 2. Créer un environnement virtuel
+### 2. Environnement virtuel
 
 ```bash
 python -m venv venv
 source venv/bin/activate  # Windows : venv\Scripts\activate
 ```
 
-### 3. Installer les dépendances
+### 3. Dépendances
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configurer les variables d'environnement
+### 4. Variables d'environnement
 
 ```bash
 cp .env.example .env
-# Éditer .env avec tes clés
+# Remplir les valeurs dans .env
 ```
 
 ### 5. Lancer l'API
 
 ```bash
-# Version v11 (recommandée)
 uvicorn main:app --reload --port 8000
-
-# Version v8.5
-uvicorn main2:app --reload --port 8001
 ```
 
-L'API est disponible sur `http://localhost:8000`  
-La documentation interactive Swagger est sur `http://localhost:8000/docs`
+Documentation interactive disponible sur `http://localhost:8000/docs`
 
 ---
 
-## 🐳 Déploiement Docker
+## 🐳 Docker
 
 ```bash
-# Build
 docker build -t pestai-api .
-
-# Run
 docker run -p 8000:8000 --env-file .env pestai-api
 ```
 
@@ -126,41 +133,41 @@ docker run -p 8000:8000 --env-file .env pestai-api
 
 | Variable | Description |
 |---|---|
-| `GEMINI_API_KEYS` | Clés API Gemini séparées par des virgules (`clé1,clé2,clé3`) |
+| `GEMINI_API_KEYS` | Clés Gemini séparées par des virgules (`clé1,clé2,clé3`) |
 | `CLOUDINARY_CLOUD_NAME` | Nom du cloud Cloudinary |
 | `CLOUDINARY_API_KEY` | Clé API Cloudinary |
-| `CLOUDINARY_API_SECRET` | Secret API Cloudinary |
+| `CLOUDINARY_API_SECRET` | Secret Cloudinary |
 
-> Le système de **rotation automatique des clés** (`KeyManager`) bascule vers la clé suivante en cas de quota dépassé.
+> Le `KeyManager` tourne automatiquement vers la clé suivante si le quota est dépassé.
 
 ---
 
-## 📡 Exemples d'utilisation
-
-### Analyse d'une plante (v11)
+## 🧪 Tests
 
 ```bash
-curl -X POST "http://localhost:8000/api/v11/analyze-unified" \
+pytest tests/ -v
+```
+
+Les tests mockent Gemini et Cloudinary — aucune clé réelle nécessaire.
+
+---
+
+## 📡 Exemple d'utilisation
+
+```bash
+curl -X POST "http://localhost:8000/api/v12/analyze" \
   -F "analysis_type=PLANT_PEST" \
-  -F "file=@feuille_malade.jpg"
+  -F "file=@feuille.jpg"
 ```
 
-### Analyse satellite (v11)
-
-```bash
-curl -X POST "http://localhost:8000/api/v11/analyze-unified" \
-  -F "analysis_type=SATELLITE_REMOTE_SENSING" \
-  -F "file=@parcelle_sentinel.png"
-```
-
-### Format de réponse
+**Réponse :**
 
 ```json
 {
   "subject": {
     "subjectType": "PLANT",
     "description": "Plant de Maïs (Zea mays)",
-    "confidence": 0.97
+    "confidence": 0.96
   },
   "detections": [
     {
@@ -170,7 +177,7 @@ curl -X POST "http://localhost:8000/api/v11/analyze-unified" \
       "boundingBox": { "x_min": 0.1, "y_min": 0.2, "x_max": 0.6, "y_max": 0.7 },
       "croppedImageUrl": "https://res.cloudinary.com/...",
       "details": {
-        "description": "Cette maladie couvre les feuilles de taches orange.",
+        "description": "Taches orange sur les feuilles.",
         "impact": "Le rendement va baisser si rien n'est fait.",
         "recommendations": {
           "biological": [...],
