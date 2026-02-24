@@ -175,18 +175,13 @@ async def voice_summary(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 300},
     }
-    for model in ("gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"):
-        for ver in ("v1", "v1beta"):
-            url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={api_key}"
-            try:
-                async with httpx.AsyncClient(timeout=50.0) as client:
-                    r = await client.post(url, json=payload)
-                if r.status_code == 200:
-                    text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    return {"text": text.strip(), "language": "wo", "model": model}
-            except Exception:
-                continue
-    raise HTTPException(status_code=503, detail="Aucun modèle Gemini disponible pour la voix.")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    async with httpx.AsyncClient(timeout=50.0) as client:
+        r = await client.post(url, json=payload)
+    if r.status_code == 200:
+        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return {"text": text.strip(), "language": "wo"}
+    raise HTTPException(status_code=r.status_code, detail=f"Gemini REST: {r.text[:500]}")
 
 
 # --- Helper : PCM brut → WAV ---
