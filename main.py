@@ -175,7 +175,7 @@ async def voice_summary(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 300},
     }
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     async with httpx.AsyncClient(timeout=50.0) as client:
         r = await client.post(url, json=payload)
     if r.status_code == 200:
