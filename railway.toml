@@ -1,0 +1,10 @@
+# Configuration Railway — PestAI API
+# https://docs.railway.app
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+startCommand = "gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:$PORT main:app"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
