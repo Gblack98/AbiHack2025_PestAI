@@ -1,6 +1,5 @@
 # =============================================================================
-# PROMPTS v12 — Optimisés pour TTS Wolof
-# Langage simple, phrases courtes, sans jargon technique.
+# PROMPTS v12 — Réponses en français
 # =============================================================================
 
 PLANT_PEST_PROMPT = """
@@ -43,31 +42,10 @@ SCHÉMA DE RÉPONSE :
 }
 
 RÈGLES :
-- LANGAGE : phrases simples et courtes (1-2 max). Ce texte sera traduit en Wolof et lu par TTS.
+- LANGAGE : Toutes les réponses textuelles en FRANÇAIS. Phrases claires et concises.
 - SÉVÉRITÉ : champ obligatoire pour chaque détection.
 - BOUNDING BOX : coordonnées normalisées (0.0 à 1.0), cibler la lésion ou le ravageur.
 - RECOMMANDATIONS : groupées par type. Tableau vide si aucune recommandation pour ce type.
-"""
-
-WOLOF_VOICE_PROMPT = """
-Tu es 'PestAI-Voice', un assistant vocal pour des agriculteurs sénégalais.
-À partir du résultat d'analyse agronomique JSON fourni, génère un message vocal court en WOLOF URBAIN
-(mélange naturel de wolof et de français comme parlé couramment au Sénégal).
-
-RÈGLES STRICTES :
-- Maximum 4 phrases courtes, naturelles, fluides.
-- Commence par interpeller l'agriculteur simplement ("Sa ngerte bi...", "Lii nekk na...").
-- Mentionne ce qui est détecté et la gravité en termes simples.
-- Donne UNE SEULE recommandation concrète et simple.
-- Utilise du wolof courant, avec les mots français techniques quand nécessaire.
-- Exemples de style :
-    • "Sa tomate bi, dafa am Alternariose. Yëf na lool. Défar ko fongicide bi ci kanam."
-    • "Natangue bi, mun na bokk ak insecte. Dabor na ko ak produit biologique."
-    • "Récolte bi dafa saa. Amul problem bu doy. Continuer na ak kenn problème."
-- Si aucune maladie détectée, rassure avec chaleur et bonne humeur.
-- NE réponds QU'AVEC LE TEXTE WOLOF UNIQUEMENT, sans guillemets ni ponctuation complexe.
-
-RÉSULTAT JSON : {analysis_json}
 """
 
 SATELLITE_PROMPT = """
@@ -111,24 +89,8 @@ SCHÉMA DE RÉPONSE :
 }
 
 RÈGLES :
-- LANGAGE : phrases simples et courtes. Texte destiné au TTS Wolof.
+- LANGAGE : Toutes les réponses textuelles en FRANÇAIS.
 - Si un diagnostic s'applique à toute la parcelle : boundingBox = {"x_min":0.0,"y_min":0.0,"x_max":1.0,"y_max":1.0}.
-"""
-
-WOLOF_SUMMARY_PROMPT = """\
-Tu es un expert agricole qui parle Wolof.
-À partir de cette analyse de maladie ou ravageur, génère un résumé vocal UNIQUEMENT EN WOLOF.
-Le texte sera lu à voix haute par un système TTS — utilise des phrases simples et courtes.
-
-Analyse :
-{analysis}
-
-RÈGLES STRICTES :
-- Maximum 4 phrases courtes.
-- Cite le nom de la plante ou culture, la maladie ou le ravageur détecté, sa gravité, et une recommandation principale.
-- PAS de markdown, PAS de listes, PAS de caractères spéciaux comme *, -, # ou parenthèses.
-- PAS de chiffres décimaux.
-- Retourne UNIQUEMENT le texte Wolof brut, rien d'autre.
 """
 
 DRONE_PROMPT = """
@@ -171,6 +133,6 @@ SCHÉMA DE RÉPONSE :
 }
 
 RÈGLES :
-- LANGAGE : phrases simples et courtes. Texte destiné au TTS Wolof.
+- LANGAGE : Toutes les réponses textuelles en FRANÇAIS.
 - Si l'anomalie couvre toute l'image : boundingBox = {"x_min":0.0,"y_min":0.0,"x_max":1.0,"y_max":1.0}.
 """
