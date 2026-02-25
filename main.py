@@ -56,10 +56,10 @@ CROP_SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 GEMINI_TEXT_MODELS = [
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    "gemini-2.0-flash-exp",
+    "gemini-2.5-flash-preview-04-17",
 ]
-GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1/models"
+GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 # --- Lifespan ---
@@ -195,16 +195,22 @@ async def voice_text(request: Request, body: VoiceAudioRequest):
 
                 if r.status_code == 429:
                     await voice_key_manager.rotate()
-                    last_error = f"Quota 429 [{model}] clé ...{api_key[-4:]}"
+                    last_error = f"Quota 429 [{model}]"
                     continue
 
+                if r.status_code == 404:
+                    # Modèle non disponible → essayer le suivant
+                    last_error = f"Modèle {model} non disponible (404)"
+                    break  # sortir de la boucle de clés, passer au modèle suivant
+
+                if not r.is_success:
+                    last_error = f"Erreur {r.status_code} [{model}]"
+                    break
+
                 try:
-                    r.raise_for_status()
                     data = r.json()
                     wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
                     return VoiceTextResponse(text=wolof_text)
-                except httpx.HTTPStatusError as e:
-                    raise HTTPException(status_code=503, detail=f"Erreur API Gemini : {e.response.text}")
                 except (KeyError, IndexError):
                     raise HTTPException(status_code=502, detail="Réponse Gemini invalide.")
 
