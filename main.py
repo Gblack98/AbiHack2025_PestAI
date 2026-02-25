@@ -56,8 +56,8 @@ CROP_SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 GEMINI_TEXT_MODELS = [
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    "gemini-2.0-flash-exp",
-    "gemini-2.5-flash-preview-04-17",
+    "gemini-2.0-pro-exp-02-05",
+    "gemini-2.0-flash-thinking-exp-01-21",
 ]
 GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
