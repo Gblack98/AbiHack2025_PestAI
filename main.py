@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from contextlib import asynccontextmanager
@@ -5,6 +6,7 @@ from contextlib import asynccontextmanager
 import cloudinary
 import google.api_core.exceptions
 import google.generativeai as genai
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
@@ -47,6 +49,13 @@ PROMPTS = {
 
 SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/tiff"}
 CROP_SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png"}
+
+# Modèle léger pour la génération de texte Wolof (fiable, rapide, text-only)
+GEMINI_TEXT_MODEL = "gemini-2.0-flash"
+GEMINI_REST_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_TEXT_MODEL}:generateContent"
+)
 
 
 # --- Lifespan ---
@@ -106,7 +115,7 @@ async def analyze(
     Pipeline complet :
     1. Sélectionne le prompt expert selon le type d'analyse.
     2. Appelle Gemini 3 Flash avec rotation automatique de clés.
-    3. Découpe les zones détectées et les uploade sur Cloudinary.
+    3. Découpe les zones détectées et les uploade sur Cloudinary (parallèle).
     4. Retourne le JSON validé par Pydantic.
     """
     if file.content_type not in SUPPORTED_TYPES:
@@ -136,8 +145,9 @@ async def analyze(
         )
 
     if analysis_data.get("detections") and file.content_type in CROP_SUPPORTED_TYPES:
-        analysis_data["detections"] = crop_and_upload(
-            image_bytes, analysis_data["detections"], folder="pestai_v12"
+        loop = asyncio.get_event_loop()
+        analysis_data["detections"] = await loop.run_in_executor(
+            None, crop_and_upload, image_bytes, analysis_data["detections"], "pestai_v12"
         )
 
     return analysis_data
@@ -155,20 +165,39 @@ async def voice_text(request: Request, body: VoiceAudioRequest):
     """
     Génère un court résumé en Wolof à partir de l'analyse agronomique.
     La synthèse audio est réalisée côté mobile via le Space HF xTTS GalsenAI (gratuit).
+    Utilise gemini-2.0-flash via l'API REST directe (plus fiable pour text-only).
     """
     analysis_str = body.json(ensure_ascii=False)
     prompt = WOLOF_SUMMARY_PROMPT.format(analysis=analysis_str)
 
+    api_key = key_manager.get_current_key()
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
+    }
+
     try:
-        genai.configure(api_key=key_manager.get_current_key())
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        resp = await model.generate_content_async(
-            prompt,
-            request_options={"timeout": 30},
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            r = await client.post(
+                GEMINI_REST_URL,
+                params={"key": api_key},
+                json=payload,
+            )
+            r.raise_for_status()
+
+        data = r.json()
+        wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Erreur API Gemini : {e.response.text}",
         )
-        wolof_text = resp.text.strip()
-    except google.api_core.exceptions.GoogleAPICallError as e:
-        raise HTTPException(status_code=503, detail=f"Erreur génération texte Wolof : {e.message}")
+    except (KeyError, IndexError, httpx.RequestError) as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Réponse Gemini invalide ou inaccessible : {e}",
+        )
 
     return VoiceTextResponse(text=wolof_text)
 
