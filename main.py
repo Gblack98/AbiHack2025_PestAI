@@ -22,6 +22,7 @@ from app.config import (
     CLOUDINARY_CLOUD_NAME,
     GEMINI_API_KEYS,
     GEMINI_MODEL,
+    GEMINI_VOICE_KEYS,
     RATE_LIMIT,
 )
 from app.key_manager import KeyManager
@@ -32,6 +33,7 @@ from app.services.gemini import call_gemini
 
 # --- Initialisation des services globaux ---
 key_manager = KeyManager(GEMINI_API_KEYS)
+voice_key_manager = KeyManager(GEMINI_VOICE_KEYS)
 
 cloudinary.config(
     cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -170,36 +172,46 @@ async def voice_text(request: Request, body: VoiceAudioRequest):
     analysis_str = body.json(ensure_ascii=False)
     prompt = WOLOF_SUMMARY_PROMPT.format(analysis=analysis_str)
 
-    api_key = key_manager.get_current_key()
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            r = await client.post(
-                GEMINI_REST_URL,
-                params={"key": api_key},
-                json=payload,
-            )
+    # Rotation automatique des clés sur quota 429
+    num_keys = len(voice_key_manager.keys)
+    last_error: str = "Toutes les clés Gemini sont épuisées."
+    for _ in range(num_keys):
+        api_key = voice_key_manager.get_current_key()
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                r = await client.post(
+                    GEMINI_REST_URL,
+                    params={"key": api_key},
+                    json=payload,
+                )
+
+            if r.status_code == 429:
+                await voice_key_manager.rotate()
+                last_error = f"Quota 429 sur clé ...{api_key[-4:]}"
+                continue
+
             r.raise_for_status()
+            data = r.json()
+            wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            return VoiceTextResponse(text=wolof_text)
 
-        data = r.json()
-        wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Erreur API Gemini : {e.response.text}",
+            )
+        except (KeyError, IndexError, httpx.RequestError) as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Réponse Gemini invalide ou inaccessible : {e}",
+            )
 
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Erreur API Gemini : {e.response.text}",
-        )
-    except (KeyError, IndexError, httpx.RequestError) as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Réponse Gemini invalide ou inaccessible : {e}",
-        )
-
-    return VoiceTextResponse(text=wolof_text)
+    raise HTTPException(status_code=503, detail=last_error)
 
 
 # --- Health check ---
