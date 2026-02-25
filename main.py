@@ -59,7 +59,7 @@ GEMINI_TEXT_MODELS = [
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
 ]
-GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1/models"
 
 
 # --- Lifespan ---
