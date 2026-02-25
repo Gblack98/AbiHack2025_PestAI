@@ -115,6 +115,22 @@ RÈGLES :
 - Si un diagnostic s'applique à toute la parcelle : boundingBox = {"x_min":0.0,"y_min":0.0,"x_max":1.0,"y_max":1.0}.
 """
 
+WOLOF_SUMMARY_PROMPT = """\
+Tu es un expert agricole qui parle Wolof.
+À partir de cette analyse de maladie ou ravageur, génère un résumé vocal UNIQUEMENT EN WOLOF.
+Le texte sera lu à voix haute par un système TTS — utilise des phrases simples et courtes.
+
+Analyse :
+{analysis}
+
+RÈGLES STRICTES :
+- Maximum 4 phrases courtes.
+- Cite le nom de la plante ou culture, la maladie ou le ravageur détecté, sa gravité, et une recommandation principale.
+- PAS de markdown, PAS de listes, PAS de caractères spéciaux comme *, -, # ou parenthèses.
+- PAS de chiffres décimaux.
+- Retourne UNIQUEMENT le texte Wolof brut, rien d'autre.
+"""
+
 DRONE_PROMPT = """
 Tu es 'PestAI-DroneVision', spécialisé dans les images de DRONE haute résolution (Orthophotos RVB et Multispectrales).
 

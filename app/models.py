@@ -61,3 +61,42 @@ class AnalysisSubject(BaseModel):
 class AIAnalysisResponse(BaseModel):
     subject: AnalysisSubject
     detections: List[Detection]
+
+
+# --- Modèles pour l'endpoint /api/v12/voice-audio ---
+
+class VoiceSolutionItem(BaseModel):
+    solution: str
+
+
+class VoiceRecommendations(BaseModel):
+    biological: List[VoiceSolutionItem] = []
+    chemical: List[VoiceSolutionItem] = []
+    cultural: List[VoiceSolutionItem] = []
+
+
+class VoiceDetectionDetails(BaseModel):
+    description: str
+    recommendations: VoiceRecommendations
+
+
+class VoiceDetection(BaseModel):
+    className: str
+    severity: str
+    confidenceScore: float
+    details: VoiceDetectionDetails
+
+
+class VoiceSubject(BaseModel):
+    subjectType: str
+    description: str
+    confidence: float
+
+
+class VoiceAudioRequest(BaseModel):
+    subject: VoiceSubject
+    detections: List[VoiceDetection]
+
+
+class VoiceTextResponse(BaseModel):
+    text: str
