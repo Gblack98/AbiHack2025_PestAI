@@ -52,12 +52,13 @@ PROMPTS = {
 SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/tiff"}
 CROP_SUPPORTED_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 
-# Modèle léger pour la génération de texte Wolof (fiable, rapide, text-only)
-GEMINI_TEXT_MODEL = "gemini-2.0-flash"
-GEMINI_REST_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_TEXT_MODEL}:generateContent"
-)
+# Chaîne de fallback pour text-only Wolof (chaque modèle a son propre quota)
+GEMINI_TEXT_MODELS = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash-latest",
+]
+GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 # --- Lifespan ---
@@ -177,39 +178,34 @@ async def voice_text(request: Request, body: VoiceAudioRequest):
         "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
     }
 
-    # Rotation automatique des clés sur quota 429
-    num_keys = len(voice_key_manager.keys)
-    last_error: str = "Toutes les clés Gemini sont épuisées."
-    for _ in range(num_keys):
-        api_key = voice_key_manager.get_current_key()
-        try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                r = await client.post(
-                    GEMINI_REST_URL,
-                    params={"key": api_key},
-                    json=payload,
-                )
+    # Essaie chaque modèle dans l'ordre, avec rotation de clés sur 429.
+    # Chaque modèle a son propre pool de quota journalier.
+    last_error: str = "Tous les modèles Gemini sont épuisés."
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        for model in GEMINI_TEXT_MODELS:
+            url = f"{GEMINI_REST_BASE}/{model}:generateContent"
+            num_keys = len(voice_key_manager.keys)
+            for _ in range(num_keys):
+                api_key = voice_key_manager.get_current_key()
+                try:
+                    r = await client.post(url, params={"key": api_key}, json=payload)
+                except httpx.RequestError as e:
+                    raise HTTPException(status_code=502, detail=f"Connexion Gemini impossible : {e}")
 
-            if r.status_code == 429:
-                await voice_key_manager.rotate()
-                last_error = f"Quota 429 sur clé ...{api_key[-4:]}"
-                continue
+                if r.status_code == 429:
+                    await voice_key_manager.rotate()
+                    last_error = f"Quota 429 [{model}] clé ...{api_key[-4:]}"
+                    continue
 
-            r.raise_for_status()
-            data = r.json()
-            wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            return VoiceTextResponse(text=wolof_text)
-
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Erreur API Gemini : {e.response.text}",
-            )
-        except (KeyError, IndexError, httpx.RequestError) as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Réponse Gemini invalide ou inaccessible : {e}",
-            )
+                try:
+                    r.raise_for_status()
+                    data = r.json()
+                    wolof_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    return VoiceTextResponse(text=wolof_text)
+                except httpx.HTTPStatusError as e:
+                    raise HTTPException(status_code=503, detail=f"Erreur API Gemini : {e.response.text}")
+                except (KeyError, IndexError):
+                    raise HTTPException(status_code=502, detail="Réponse Gemini invalide.")
 
     raise HTTPException(status_code=503, detail=last_error)
 
