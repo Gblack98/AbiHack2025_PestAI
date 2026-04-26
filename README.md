@@ -1,5 +1,7 @@
 # 🌿 PestAI — Agricultural AI Analysis API
 
+> 📱 **Application mobile** : [PestAI Mobile](https://github.com/Gblack98/PestAI-Mobile) · [Télécharger l'APK](https://github.com/Gblack98/PestAI-Mobile/releases/tag/v12.0.0)
+
 API de détection agronomique par intelligence artificielle, développée dans le cadre du hackathon **AbiHack 2025**.  
 Elle analyse des images de plantes, de satellites et de drones pour identifier maladies, ravageurs et anomalies agricoles — avec des recommandations optimisées pour une lecture vocale en **Wolof**.
 
